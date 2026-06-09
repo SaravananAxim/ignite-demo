@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Confirm your email</title>
+  <!--[if mso]>
+  <noscript>
+    <xml>
+      <o:OfficeDocumentSettings>
+        <o:PixelsPerInch>96</o:PixelsPerInch>
+      </o:OfficeDocumentSettings>
+    </xml>
+  </noscript>
+  <![endif]-->
+</head>
+<body style="margin: 0; padding: 0; background-color: #e8eaef; font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color: #e8eaef; padding: 40px 20px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width: 480px; margin: 0 auto;">
+          <tr>
+            <td style="background-color: #ffffff; border-radius: 10px; box-shadow: 0 1px 2px rgba(0,0,0,0.06); overflow: hidden;">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">
+                <tr>
+                  <td style="background-color: #1a2d38; padding: 32px 40px; text-align: center;">
+                    <h1 style="margin: 0; color: #ffffff; font-size: 22px; font-weight: 700; letter-spacing: -0.02em;">Ignite Franchise Portal</h1>
+                    <p style="margin: 8px 0 0 0; color: rgba(255,255,255,0.8); font-size: 14px;">Confirm your account</p>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding: 40px;">
+                    <p style="margin: 0 0 16px 0; color: #0f1729; font-size: 16px; line-height: 1.6;">Thanks for signing up. Click the button below to verify your email address and get started.</p>
+                    <p style="margin: 0 0 24px 0; color: #6b7280; font-size: 14px; line-height: 1.5;">If you didn't create an account, you can safely ignore this email.</p>
+                    <table role="presentation" cellspacing="0" cellpadding="0" border="0" align="center">
+                      <tr>
+                        <td style="border-radius: 8px; background-color: #30536C;">
+                          <a href="{{ .ConfirmationURL }}" target="_blank" style="display: inline-block; padding: 14px 28px; color: #ffffff; font-size: 15px; font-weight: 600; text-decoration: none;">Confirm your email</a>
+                        </td>
+                      </tr>
+                    </table>
+                    <p style="margin: 24px 0 0 0; color: #6b7280; font-size: 13px; line-height: 1.5;">Button not working? Copy and paste this link into your browser:</p>
+                    <p style="margin: 8px 0 0 0; word-break: break-all;"><a href="{{ .ConfirmationURL }}" style="color: #30536C; text-decoration: none; font-size: 13px;">{{ .ConfirmationURL }}</a></p>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding: 24px 40px; border-top: 1px solid #e5e7eb; background-color: #f8f9fa; border-radius: 0 0 10px 10px;">
+                    <p style="margin: 0; color: #6b7280; font-size: 12px; line-height: 1.5;">This email was sent by Ignite Franchise Portal. If you have questions, contact your administrator.</p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

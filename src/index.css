@@ -1,0 +1,221 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Glide Portal Design System Colors */
+    --background: 0 0% 100%;
+    --foreground: 222 47% 11%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+
+    /* Primary - #30536C */
+    --primary: 205 38% 31%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 210 20% 93%;
+    --secondary-foreground: 220 14% 18%;
+
+    --muted: 210 20% 93%;
+    --muted-foreground: 218 11% 45%;
+
+    --accent: 210 20% 93%;
+    --accent-foreground: 220 14% 18%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    /* Borders - #E5E7EB */
+    --border: 218 14% 91%;
+    --input: 218 14% 91%;
+    --ring: 205 38% 31%;
+
+    --radius: 0.625rem;
+
+    /* Custom tokens for Glide Portal */
+    --nav-background: 201 38% 14%;
+    --nav-foreground: 0 0% 100%;
+    --info-banner: 210 14% 93%;
+    --text-primary: 222 47% 11%;
+    --text-secondary: 220 14% 18%;
+    --text-muted: 218 11% 45%;
+
+    /* Shadows */
+    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.06);
+    --shadow-elevated: 0 4px 12px rgba(0, 0, 0, 0.08);
+    --shadow-glow: 0 0 20px rgba(48, 83, 108, 0.15);
+
+    /* Sidebar */
+    --sidebar-background: 201 38% 14%;
+    --sidebar-foreground: 0 0% 100%;
+    --sidebar-primary: 205 38% 31%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 201 35% 20%;
+    --sidebar-accent-foreground: 0 0% 100%;
+    --sidebar-border: 201 30% 22%;
+    --sidebar-ring: 205 38% 31%;
+  }
+
+  .dark {
+    --background: 201 38% 8%;
+    --foreground: 210 20% 95%;
+
+    --card: 201 35% 12%;
+    --card-foreground: 210 20% 95%;
+
+    --popover: 201 35% 12%;
+    --popover-foreground: 210 20% 95%;
+
+    --primary: 205 45% 45%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 201 30% 18%;
+    --secondary-foreground: 210 15% 85%;
+
+    --muted: 201 25% 18%;
+    --muted-foreground: 210 10% 55%;
+
+    --accent: 201 30% 22%;
+    --accent-foreground: 210 15% 90%;
+
+    --destructive: 0 62% 50%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 201 25% 22%;
+    --input: 201 25% 22%;
+    --ring: 205 45% 50%;
+
+    --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.3);
+    --shadow-elevated: 0 10px 40px rgba(0, 0, 0, 0.4);
+
+    --sidebar-background: 201 38% 6%;
+    --sidebar-foreground: 210 15% 90%;
+    --sidebar-primary: 205 45% 50%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 201 30% 14%;
+    --sidebar-accent-foreground: 210 15% 90%;
+    --sidebar-border: 201 25% 18%;
+    --sidebar-ring: 205 45% 50%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-muted text-foreground font-sans antialiased;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+
+  /* Ensure #root always has a background so we never see a blank white flash */
+  #root {
+    min-height: 100vh;
+    background-color: hsl(var(--muted));
+  }
+
+  html {
+    scroll-behavior: smooth;
+    overflow-x: clip;
+  }
+}
+
+@layer components {
+  /* Typography utilities matching design system */
+  .text-page-title {
+    @apply text-[32px] sm:text-[36px] font-extrabold leading-tight tracking-tight;
+  }
+
+  .text-card-headline {
+    @apply text-[36px] sm:text-[44px] font-black leading-none tracking-tight;
+  }
+
+  .text-section-header {
+    @apply text-[22px] sm:text-[24px] font-extrabold leading-snug;
+  }
+
+  .text-body {
+    @apply text-[14px] sm:text-[15px] font-normal leading-relaxed;
+  }
+
+  .text-body-medium {
+    @apply text-[14px] sm:text-[15px] font-medium leading-relaxed;
+  }
+
+  .text-label {
+    @apply text-[11px] sm:text-[12px] font-bold uppercase tracking-[0.06em];
+  }
+}
+
+@layer utilities {
+  .shadow-card {
+    box-shadow: var(--shadow-card);
+  }
+
+  .shadow-elevated {
+    box-shadow: var(--shadow-elevated);
+  }
+
+  .shadow-glow {
+    box-shadow: var(--shadow-glow);
+  }
+
+  /* Content containers */
+  .content-max {
+    @apply max-w-[1100px] mx-auto;
+  }
+
+  .content-narrow {
+    @apply max-w-[520px] mx-auto;
+  }
+
+  /* Animation utilities */
+  .animate-fade-in {
+    animation: fadeIn 0.4s ease-out forwards;
+  }
+
+  .animate-slide-up {
+    animation: slideUp 0.4s ease-out forwards;
+  }
+
+  .animate-scale-in {
+    animation: scaleIn 0.25s ease-out forwards;
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes scaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
