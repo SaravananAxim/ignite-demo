@@ -39,11 +39,6 @@ import PortalDetail from "@/pages/PortalDetail";
 import BrandDetail from "@/pages/BrandDetail";
 import Brands from "@/pages/Brands";
 import Plans from "@/pages/Plans";
-import SKUs from "@/pages/admin/SKUs";
-import Packages from "@/pages/admin/Packages";
-import Products from "@/pages/admin/Products";
-import Programs from "@/pages/admin/Programs";
-import ApiKeys from "@/pages/admin/ApiKeys";
 
 /**
  * Route configuration component
@@ -195,46 +190,6 @@ export function AppRoutes() {
         }
       />
       <Route
-        path="/admin/skus"
-        element={
-          <RequireAuth requiredRole="admin" redirectTo="/admin/login">
-            <SKUs />
-          </RequireAuth>
-        }
-      />
-      <Route
-        path="/admin/products"
-        element={
-          <RequireAuth requiredRole="admin" redirectTo="/admin/login">
-            <Products />
-          </RequireAuth>
-        }
-      />
-      <Route
-        path="/admin/packages"
-        element={
-          <RequireAuth requiredRole="admin" redirectTo="/admin/login">
-            <Packages />
-          </RequireAuth>
-        }
-      />
-      <Route
-        path="/admin/programs"
-        element={
-          <RequireAuth requiredRole="admin" redirectTo="/admin/login">
-            <Programs />
-          </RequireAuth>
-        }
-      />
-      <Route
-        path="/admin/api-keys"
-        element={
-          <RequireAuth requiredRole="super_admin" redirectTo="/admin/login">
-            <ApiKeys />
-          </RequireAuth>
-        }
-      />
-      <Route
         path="/admin/contracts"
         element={
           <RequireAuth requiredRole="admin" redirectTo="/admin/login">
@@ -356,9 +311,4 @@ export const ROUTES = {
   BRAND_DETAIL: (portalId: string, brandId: string) => `/portals/${portalId}/brands/${brandId}`,
   BRANDS: '/brands',
   PLANS: '/plans',
-  ADMIN_SKUS: '/admin/skus',
-  ADMIN_PRODUCTS: '/admin/products',
-  ADMIN_PACKAGES: '/admin/packages',
-  ADMIN_PROGRAMS: '/admin/programs',
-  ADMIN_API_KEYS: '/admin/api-keys',
 } as const;

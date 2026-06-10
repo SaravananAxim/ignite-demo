@@ -4,7 +4,6 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { RichTextEditor } from '@/components/ui/rich-text-editor';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { SkuPicker } from '@/components/ui/sku-picker';
 import { PLAN_CATEGORIES, type PlanCategory, type PlanFormData } from '@/components/plans/planFormTypes';
 
 interface ContractTemplateOption {
@@ -108,36 +107,14 @@ export function PlanFormFields({
       )}
 
       <div className="space-y-2">
-        <Label>SKUs</Label>
-        <p className="text-xs text-muted-foreground">
-          Select the SKUs included in this plan
-        </p>
-        <SkuPicker
-          selectedSkuIds={formData.selectedSkuIds}
-          onAdd={(newIds) =>
-            setFormData((current) => ({
-              ...current,
-              selectedSkuIds: [...new Set([...current.selectedSkuIds, ...newIds])],
-            }))
-          }
-          onRemove={(skuId) =>
-            setFormData((current) => ({
-              ...current,
-              selectedSkuIds: current.selectedSkuIds.filter((id) => id !== skuId),
-            }))
-          }
-        />
-      </div>
-
-      <div className="space-y-2">
-        <Label htmlFor="plan-description">Notes</Label>
+        <Label htmlFor="plan-description">Description</Label>
         <p className="text-xs text-muted-foreground">
           Use bullet points to list what's included in this plan
         </p>
         <RichTextEditor
           value={formData.description}
           onChange={(value) => setFormData((current) => ({ ...current, description: value }))}
-          placeholder="Additional notes about this plan…"
+          placeholder="Describe what's included in this plan..."
         />
       </div>
 

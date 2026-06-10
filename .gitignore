@@ -14,8 +14,8 @@ build/
 .vite/
 
 # Environment variables (keep .env.example tracked)
-.env.*
-!.env.example
+# .env.*
+# !.env.example
 
 # Logs
 logs/

@@ -12,5 +12,4 @@ export interface PlanFormData {
   category: PlanCategory;
   contract_template_id: string;
   status: string;
-  selectedSkuIds: string[];
 }

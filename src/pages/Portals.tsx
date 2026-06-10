@@ -14,15 +14,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { ConfirmDeleteDialog } from '@/components/ui/confirm-delete-dialog';
-import { PaginationControls } from '@/components/ui/PaginationControls';
 import { toast } from '@/hooks/use-toast';
 import { Plus, Pencil, Globe, Loader2, ExternalLink, FlaskConical, ChevronRight } from 'lucide-react';
 import { format } from 'date-fns';
 import { activityLogger } from '@/lib/activityLogger';
-import { usePagination } from '@/hooks/usePagination';
-import { useSort } from '@/hooks/useSort';
-
-const PAGE_SIZE = 50;
 
 interface Portal {
   id: string;
@@ -43,47 +38,17 @@ export default function Portals() {
   });
   const queryClient = useQueryClient();
 
-  const { sortColumn, sortDirection, toggleSort, SortIcon } = useSort({
-    defaultColumn: 'created_at',
-    defaultDirection: 'desc',
-  });
-
-  const { data: totalCount = 0 } = useQuery({
-    queryKey: ['portals-count'],
-    queryFn: async () => {
-      const { count, error } = await supabase
-        .from('portals')
-        .select('*', { count: 'exact', head: true });
-      if (error) throw error;
-      return count ?? 0;
-    },
-  });
-
-  const { currentPage, totalPages, pageSize, offset, goToPage } = usePagination({
-    totalCount,
-    pageSize: PAGE_SIZE,
-    resetKey: `${sortColumn}-${sortDirection}`,
-  });
-
   const { data: portals, isLoading } = useQuery({
-    queryKey: ['portals', sortColumn, sortDirection, currentPage],
+    queryKey: ['portals'],
     queryFn: async () => {
-      const effectiveCol = ['name', 'subdomain', 'created_at'].includes(sortColumn) ? sortColumn : 'created_at';
       const { data, error } = await supabase
         .from('portals')
         .select('*')
-        .order(effectiveCol, { ascending: sortDirection === 'asc' })
-        .range(offset, offset + PAGE_SIZE - 1);
+        .order('created_at', { ascending: false });
       if (error) throw error;
       return data as Portal[];
     },
   });
-
-  const invalidatePortals = () => {
-    queryClient.invalidateQueries({ queryKey: ['portals'] });
-    queryClient.invalidateQueries({ queryKey: ['portals-list'] });
-    queryClient.invalidateQueries({ queryKey: ['portals-count'] });
-  };
 
   const createMutation = useMutation({
     mutationFn: async (data: typeof formData) => {
@@ -93,13 +58,18 @@ export default function Portals() {
         .select('id, name, subdomain')
         .single();
       if (error) throw error;
+
       return created;
     },
     onSuccess: async (created) => {
-      invalidatePortals();
-      goToPage(1);
+      queryClient.invalidateQueries({ queryKey: ['portals'] });
+      queryClient.invalidateQueries({ queryKey: ['portals-list'] });
+      queryClient.invalidateQueries({ queryKey: ['portals-count'] });
       if (created) {
-        await activityLogger.portalCreated(created.id, { name: created.name, subdomain: created.subdomain });
+        await activityLogger.portalCreated(created.id, {
+          name: created.name,
+          subdomain: created.subdomain,
+        });
       }
       toast.success('Portal created successfully');
       resetForm();
@@ -122,32 +92,44 @@ export default function Portals() {
         .select('id, name, subdomain')
         .single();
       if (error) throw error;
+
       return updated;
     },
     onSuccess: async (updated) => {
-      invalidatePortals();
+      queryClient.invalidateQueries({ queryKey: ['portals'] });
+      queryClient.invalidateQueries({ queryKey: ['portals-list'] });
+      queryClient.invalidateQueries({ queryKey: ['portals-count'] });
       if (updated) {
-        await activityLogger.portalUpdated(updated.id, { name: updated.name, subdomain: updated.subdomain });
+        await activityLogger.portalUpdated(updated.id, {
+          name: updated.name,
+          subdomain: updated.subdomain,
+        });
       }
       toast.success('Portal updated successfully');
       resetForm();
     },
-    onError: (error: Error) => { toast.error(error.message); },
+    onError: (error: Error) => {
+      toast.error(error.message);
+    },
   });
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
       const { error } = await supabase.from('portals').delete().eq('id', id);
       if (error) throw error;
+
       return id;
     },
     onSuccess: async (id) => {
-      invalidatePortals();
-      goToPage(1);
+      queryClient.invalidateQueries({ queryKey: ['portals'] });
+      queryClient.invalidateQueries({ queryKey: ['portals-list'] });
+      queryClient.invalidateQueries({ queryKey: ['portals-count'] });
       await activityLogger.portalDeleted(id, {});
       toast.success('Portal deleted successfully');
     },
-    onError: (error: Error) => { toast.error(error.message); },
+    onError: (error: Error) => {
+      toast.error(error.message);
+    },
   });
 
   const resetForm = () => {
@@ -158,7 +140,11 @@ export default function Portals() {
 
   const handleEdit = (portal: Portal) => {
     setEditingPortal(portal);
-    setFormData({ subdomain: portal.subdomain, name: portal.name, require_payment: portal.require_payment });
+    setFormData({
+      subdomain: portal.subdomain,
+      name: portal.name,
+      require_payment: portal.require_payment,
+    });
     setIsDialogOpen(true);
   };
 
@@ -179,9 +165,14 @@ export default function Portals() {
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0">
             <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight">Portals</h1>
-            <p className="text-muted-foreground mt-1">Manage your subdomain portals</p>
+            <p className="text-muted-foreground mt-1">
+              Manage your subdomain portals
+            </p>
           </div>
-          <Dialog open={isDialogOpen} onOpenChange={(open) => { setIsDialogOpen(open); if (!open) resetForm(); }}>
+          <Dialog open={isDialogOpen} onOpenChange={(open) => {
+            setIsDialogOpen(open);
+            if (!open) resetForm();
+          }}>
             <DialogTrigger asChild>
               <Button className="gap-2 shrink-0 w-full sm:w-auto">
                 <Plus className="w-4 h-4" />
@@ -195,18 +186,36 @@ export default function Portals() {
               <form onSubmit={handleSubmit} className="space-y-4 mt-4">
                 <div className="space-y-2">
                   <Label htmlFor="subdomain">Subdomain</Label>
-                  <Input id="subdomain" placeholder="my-portal" value={formData.subdomain} onChange={(e) => setFormData({ ...formData, subdomain: e.target.value })} required />
+                  <Input
+                    id="subdomain"
+                    placeholder="my-portal"
+                    value={formData.subdomain}
+                    onChange={(e) => setFormData({ ...formData, subdomain: e.target.value })}
+                    required
+                  />
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="name">Portal Name</Label>
-                  <Input id="name" placeholder="My Portal" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} required />
+                  <Input
+                    id="name"
+                    placeholder="My Portal"
+                    value={formData.name}
+                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                    required
+                  />
                 </div>
                 <div className="flex items-center justify-between">
                   <Label htmlFor="require_payment">Require Payment</Label>
-                  <Switch id="require_payment" checked={formData.require_payment} onCheckedChange={(checked) => setFormData({ ...formData, require_payment: checked })} />
+                  <Switch
+                    id="require_payment"
+                    checked={formData.require_payment}
+                    onCheckedChange={(checked) => setFormData({ ...formData, require_payment: checked })}
+                  />
                 </div>
                 <Button type="submit" className="w-full" disabled={isPending}>
-                  {isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : editingPortal ? 'Update Portal' : 'Create Portal'}
+                  {isPending ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : editingPortal ? 'Update Portal' : 'Create Portal'}
                 </Button>
               </form>
             </DialogContent>
@@ -230,112 +239,104 @@ export default function Portals() {
                 No portals yet. Create your first portal to get started.
               </div>
             ) : (
-              <div className="space-y-4">
-                <div className="overflow-x-auto">
-                  <Table className="min-w-[640px]">
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead
-                          className="cursor-pointer select-none hover:bg-muted/50"
-                          onClick={() => toggleSort('subdomain')}
-                        >
-                          <div className="flex items-center gap-1">Subdomain <SortIcon column="subdomain" /></div>
-                        </TableHead>
-                        <TableHead
-                          className="cursor-pointer select-none hover:bg-muted/50"
-                          onClick={() => toggleSort('name')}
-                        >
-                          <div className="flex items-center gap-1">Name <SortIcon column="name" /></div>
-                        </TableHead>
-                        <TableHead className="hidden md:table-cell">Payment Required</TableHead>
-                        <TableHead
-                          className="hidden sm:table-cell cursor-pointer select-none hover:bg-muted/50"
-                          onClick={() => toggleSort('created_at')}
-                        >
-                          <div className="flex items-center gap-1">Created <SortIcon column="created_at" /></div>
-                        </TableHead>
-                        <TableHead>Access</TableHead>
-                        <TableHead className="text-right">Actions</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {portals?.map((portal) => (
-                        <TableRow
-                          key={portal.id}
-                          className="cursor-pointer hover:bg-muted/50"
-                          onClick={() => navigate(`/portals/${portal.id}`)}
-                        >
-                          <TableCell className="font-mono text-sm">
-                            <div className="flex items-center gap-2">
-                              {portal.subdomain}
-                              <ChevronRight className="w-4 h-4 text-muted-foreground" />
-                            </div>
-                          </TableCell>
-                          <TableCell className="font-medium">{portal.name}</TableCell>
-                          <TableCell className="hidden md:table-cell">
-                            <Badge variant={portal.require_payment ? 'default' : 'secondary'}>
-                              {portal.require_payment ? 'Yes' : 'No'}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-muted-foreground hidden sm:table-cell">
-                            {format(new Date(portal.created_at), 'MMM d, yyyy')}
-                          </TableCell>
-                          <TableCell onClick={(e) => e.stopPropagation()}>
-                            <TooltipProvider>
-                              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <Button variant="outline" size="sm" className="gap-1.5" onClick={() => {
-                                      const testUrl = `${window.location.origin}/select-brand?portal=${portal.subdomain}`;
-                                      window.open(testUrl, '_blank');
-                                    }}>
-                                      <FlaskConical className="w-3.5 h-3.5" />
-                                      Test
-                                    </Button>
-                                  </TooltipTrigger>
-                                  <TooltipContent><p>Open with ?portal= param (internal testing)</p></TooltipContent>
-                                </Tooltip>
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <Button variant="outline" size="sm" className="gap-1.5" onClick={() => {
-                                      const liveUrl = PORTAL.getPortalUrl(portal.subdomain);
-                                      window.open(liveUrl, '_blank');
-                                    }}>
-                                      <ExternalLink className="w-3.5 h-3.5" />
-                                      Live
-                                    </Button>
-                                  </TooltipTrigger>
-                                  <TooltipContent><p>Open actual subdomain ({portal.subdomain}.{PORTAL.BASE_DOMAIN})</p></TooltipContent>
-                                </Tooltip>
-                              </div>
-                            </TooltipProvider>
-                          </TableCell>
-                          <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
-                            <div className="flex items-center justify-end gap-2">
-                              <Button variant="ghost" size="icon" onClick={() => handleEdit(portal)}>
-                                <Pencil className="w-4 h-4" />
-                              </Button>
-                              <ConfirmDeleteDialog
-                                title="Delete Portal"
-                                description={`Are you sure you want to delete "${portal.name}"? This will also delete all brands and plans under this portal. This action cannot be undone.`}
-                                onConfirm={() => deleteMutation.mutate(portal.id)}
-                                isLoading={deleteMutation.isPending}
-                              />
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
-                <PaginationControls
-                  currentPage={currentPage}
-                  totalPages={totalPages}
-                  totalCount={totalCount}
-                  pageSize={pageSize}
-                  onPageChange={goToPage}
-                />
-              </div>
+              <Table className="min-w-[640px]">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Subdomain</TableHead>
+                    <TableHead>Name</TableHead>
+                    <TableHead className="hidden md:table-cell">Payment Required</TableHead>
+                    <TableHead className="hidden sm:table-cell">Created</TableHead>
+                    <TableHead>Access</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {portals?.map((portal) => (
+                    <TableRow 
+                      key={portal.id} 
+                      className="cursor-pointer hover:bg-muted/50"
+                      onClick={() => navigate(`/portals/${portal.id}`)}
+                    >
+                      <TableCell className="font-mono text-sm">
+                        <div className="flex items-center gap-2">
+                          {portal.subdomain}
+                          <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                        </div>
+                      </TableCell>
+                      <TableCell className="font-medium">{portal.name}</TableCell>
+                      <TableCell className="hidden md:table-cell">
+                        <Badge variant={portal.require_payment ? 'default' : 'secondary'}>
+                          {portal.require_payment ? 'Yes' : 'No'}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-muted-foreground hidden sm:table-cell">
+                        {format(new Date(portal.created_at), 'MMM d, yyyy')}
+                      </TableCell>
+                      <TableCell onClick={(e) => e.stopPropagation()}>
+                        <TooltipProvider>
+                          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="gap-1.5"
+                                  onClick={() => {
+                                    const testUrl = `${window.location.origin}/select-brand?portal=${portal.subdomain}`;
+                                    window.open(testUrl, '_blank');
+                                  }}
+                                >
+                                  <FlaskConical className="w-3.5 h-3.5" />
+                                  Test
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p>Open with ?portal= param (internal testing)</p>
+                              </TooltipContent>
+                            </Tooltip>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="gap-1.5"
+                                  onClick={() => {
+                                    const liveUrl = PORTAL.getPortalUrl(portal.subdomain);
+                                    window.open(liveUrl, '_blank');
+                                  }}
+                                >
+                                  <ExternalLink className="w-3.5 h-3.5" />
+                                  Live
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p>Open actual subdomain ({portal.subdomain}.{PORTAL.BASE_DOMAIN})</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </div>
+                        </TooltipProvider>
+                      </TableCell>
+                      <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center justify-end gap-2">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleEdit(portal)}
+                          >
+                            <Pencil className="w-4 h-4" />
+                          </Button>
+                          <ConfirmDeleteDialog
+                            title="Delete Portal"
+                            description={`Are you sure you want to delete "${portal.name}"? This will also delete all brands and plans under this portal. This action cannot be undone.`}
+                            onConfirm={() => deleteMutation.mutate(portal.id)}
+                            isLoading={deleteMutation.isPending}
+                          />
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
             )}
           </CardContent>
         </Card>

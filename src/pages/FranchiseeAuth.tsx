@@ -9,34 +9,33 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp';
 import { toast } from '@/hooks/use-toast';
 import { z } from 'zod';
-import { Mail, Lock, ArrowRight, Loader2, WifiOff, User } from 'lucide-react';
+import { Mail, ArrowRight, Loader2, WifiOff, User } from 'lucide-react';
 
-const loginSchema = z.object({
+const authSchema = z.object({
   email: z.string().email('Please enter a valid email address'),
-  password: z.string().min(1, 'Please enter your password'),
 });
 
-const signupSchema = z.object({
-  email: z.string().email('Please enter a valid email address'),
-  password: z.string().min(6, 'Password must be at least 6 characters'),
+const signupSchema = authSchema.extend({
   fullName: z.string().min(2, 'Please enter your full name'),
 });
 
 export default function FranchiseeAuth() {
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
   const [loading, setLoading] = useState(false);
+  const [codeSent, setCodeSent] = useState(false);
+  const [code, setCode] = useState('');
 
-  const { signIn, signUp, resetPassword, user } = useUser();
+  const { signInWithOtp, signUp, verifyOtp, user } = useUser();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { isOnline } = useNetworkStatus();
   const { portal } = usePortal();
-
+  
   // Get return params from URL
   const planId = searchParams.get('plan_id');
   const brandId = searchParams.get('brand_id');
@@ -58,12 +57,12 @@ export default function FranchiseeAuth() {
       if (brandId) params.set('brand_id', brandId);
       if (paidMedia) params.set('paid_media', paidMedia);
       if (customerType) params.set('customer_type', customerType);
-
+      
       const queryString = params.toString();
-      const returnUrl = queryString
+      const returnUrl = queryString 
         ? (returnTo.includes('?') ? `${returnTo}&${queryString}` : `${returnTo}?${queryString}`)
         : returnTo;
-
+      
       navigate(returnUrl, { replace: true });
     }
   }, [user, navigate, planId, brandId, paidMedia, customerType, returnTo]);
@@ -92,54 +91,74 @@ export default function FranchiseeAuth() {
       return;
     }
 
-    setLoading(true);
-    try {
-      if (isLogin) {
-        const validation = loginSchema.safeParse({ email, password });
-        if (!validation.success) {
-          toast.error(validation.error.errors[0].message);
-          return;
-        }
+    if (isLogin) {
+      const validation = authSchema.safeParse({ email });
+      if (!validation.success) {
+        toast.error(validation.error.errors[0].message);
+        return;
+      }
+    } else {
+      const validation = signupSchema.safeParse({ email, fullName });
+      if (!validation.success) {
+        toast.error(validation.error.errors[0].message);
+        return;
+      }
+    }
 
-        const { error } = await signIn(email, password);
+    setLoading(true);
+
+    try {
+      // Omit emailRedirectTo so Supabase uses Site URL (avoids 422 if custom URL isn't in allow list). User signs in by entering the code.
+      if (isLogin) {
+        const { error } = await signInWithOtp(email, {
+          shouldCreateUser: false,
+        });
         if (error) {
-          if (error.message.toLowerCase().includes('invalid login credentials')) {
-            toast.error('Incorrect email or password.');
-          } else if (error.message.toLowerCase().includes('email not confirmed')) {
-            toast.error('Please confirm your email before signing in. Check your inbox for the confirmation link.');
+          if (error.message.includes('Signups not allowed') || error.message.includes('signups_disabled')) {
+            toast.error('No account found for this email. Sign up to create an account.');
+            setIsLogin(false);
           } else {
             toast.error(error.message);
           }
-          return;
+        } else {
+          setCodeSent(true);
         }
-        // Success: onAuthStateChange sets user and the effect redirects.
       } else {
-        const validation = signupSchema.safeParse({ email, password, fullName });
-        if (!validation.success) {
-          toast.error(validation.error.errors[0].message);
-          return;
+        let { error } = await signInWithOtp(email, {
+          data: { full_name: fullName },
+          shouldCreateUser: true,
+        });
+        // Fallback: if project disables OTP signup, create user with signUp then send OTP
+        const otpSignupDisabled =
+          error?.message?.includes('Signups not allowed for otp') ||
+          (error as { code?: string })?.code === 'otp_disabled';
+        if (error && otpSignupDisabled) {
+          const tempPassword = `${Math.random().toString(36).slice(-10)}A1a!`;
+          const { error: signUpError } = await signUp(email, tempPassword, { full_name: fullName });
+          if (signUpError) {
+            if (signUpError.message.includes('already registered') || signUpError.message.includes('already exists')) {
+              toast.error('An account with this email already exists. Use sign in to get a code.');
+              setIsLogin(true);
+            } else {
+              toast.error(signUpError.message);
+            }
+            setLoading(false);
+            return;
+          }
+          error = (await signInWithOtp(email, { shouldCreateUser: false })).error;
         }
-
-        const { error } = await signUp(
-          email,
-          password,
-          { full_name: fullName },
-          getEmailRedirectTo(),
-        );
-        if (error) {
-          if (error.message.toLowerCase().includes('already registered') || error.message.toLowerCase().includes('already exists')) {
-            toast.error('An account with this email already exists. Sign in instead.');
+        if (error && !otpSignupDisabled) {
+          if (error.message.includes('already registered') || error.message.includes('already exists')) {
+            toast.error('An account with this email already exists. Use sign in to get a code.');
             setIsLogin(true);
           } else {
             toast.error(error.message);
           }
-          return;
+        } else if (!error) {
+          setCodeSent(true);
+        } else {
+          toast.error(error?.message ?? 'Could not send code. Try again.');
         }
-        // If email confirmation is required, no session is created yet. If it is
-        // disabled, onAuthStateChange signs the user in and the effect redirects.
-        toast.success('Account created. Check your email to confirm, then sign in.');
-        setIsLogin(true);
-        setPassword('');
       }
     } catch (err) {
       toast.error('An unexpected error occurred. Please try again.');
@@ -148,26 +167,90 @@ export default function FranchiseeAuth() {
     }
   };
 
-  const handleForgotPassword = async () => {
-    const validation = z.string().email().safeParse(email);
-    if (!validation.success) {
-      toast.error('Enter your email above, then select "Forgot password".');
+  const handleVerifyCode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const trimmed = code.replace(/\s/g, '');
+    if (trimmed.length !== 8) {
+      toast.error('Please enter the 8-digit code from your email.');
       return;
     }
     setLoading(true);
     try {
-      const { error } = await resetPassword(email);
+      const { error } = await verifyOtp(email, trimmed);
       if (error) {
-        toast.error(error.message);
+        toast.error(error.message || 'Invalid or expired code. Request a new one.');
         return;
       }
-      toast.success('If an account exists for that email, a reset link is on its way.');
+      // Success: onAuthStateChange will set user and useEffect will redirect
     } catch {
-      toast.error('An unexpected error occurred. Please try again.');
+      toast.error('Something went wrong. Please try again.');
     } finally {
       setLoading(false);
     }
   };
+
+  if (codeSent) {
+    return (
+      <PortalLayout
+        showBackButton={false}
+        infoBannerText="Sign in or create an account to access the franchise registration portal."
+      >
+        <div className="flex items-center justify-center py-8">
+          <Card className="w-full max-w-md shadow-elevated animate-scale-in border border-border rounded-lg">
+            <CardHeader className="text-center space-y-4 p-card-padding pb-0">
+              <div>
+                <CardTitle className="text-page-title text-foreground">Enter verification code</CardTitle>
+                <CardDescription className="text-body text-muted-foreground mt-2">
+                  We sent an 8-digit code to <strong className="text-foreground">{email}</strong>. Enter it below.
+                </CardDescription>
+              </div>
+            </CardHeader>
+            <CardContent className="p-card-padding">
+              <form onSubmit={handleVerifyCode} className="space-y-4">
+                <div className="flex justify-center">
+                  <InputOTP
+                    maxLength={8}
+                    value={code}
+                    onChange={setCode}
+                    disabled={loading}
+                  >
+                    <InputOTPGroup className="gap-1">
+                      {Array.from({ length: 8 }).map((_, i) => (
+                        <InputOTPSlot key={i} index={i} />
+                      ))}
+                    </InputOTPGroup>
+                  </InputOTP>
+                </div>
+                <Button
+                  type="submit"
+                  className="w-full"
+                  disabled={loading || code.replace(/\s/g, '').length !== 8}
+                >
+                  {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Verify & continue'}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => {
+                    setCodeSent(false);
+                    setCode('');
+                    setIsLogin(true);
+                  }}
+                  disabled={loading}
+                >
+                  Back to Sign in
+                </Button>
+                <p className="text-xs text-center text-muted-foreground">
+                  Didn&apos;t get the code? Check spam or request a new one below.
+                </p>
+              </form>
+            </CardContent>
+          </Card>
+        </div>
+      </PortalLayout>
+    );
+  }
 
   return (
     <PortalLayout
@@ -182,14 +265,14 @@ export default function FranchiseeAuth() {
                 {isLogin ? 'Sign in to continue' : 'Create your account'}
               </CardTitle>
               <CardDescription className="text-body text-muted-foreground mt-2">
-                {isLogin
-                  ? 'Sign in to your account to complete your registration'
+                {isLogin 
+                  ? 'Sign in to your account to complete your registration' 
                   : 'Create an account to save your progress and manage your subscription'
                 }
               </CardDescription>
             </div>
           </CardHeader>
-
+          
           <form onSubmit={handleSubmit}>
             <CardContent className="space-y-5 p-card-padding">
               {!isLogin && (
@@ -204,7 +287,6 @@ export default function FranchiseeAuth() {
                       value={fullName}
                       onChange={(e) => setFullName(e.target.value)}
                       className="pl-10 h-11 rounded-md border-border"
-                      autoComplete="name"
                       required={!isLogin}
                     />
                   </div>
@@ -222,46 +304,12 @@ export default function FranchiseeAuth() {
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     className="pl-10 h-11 rounded-md border-border"
-                    autoComplete="email"
                     required
                   />
                 </div>
-              </div>
-
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="password" className="text-body-medium text-foreground">Password</Label>
-                  {isLogin && (
-                    <button
-                      type="button"
-                      onClick={handleForgotPassword}
-                      disabled={loading}
-                      className="text-xs text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
-                    >
-                      Forgot password?
-                    </button>
-                  )}
-                </div>
-                <div className="relative">
-                  <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                  <Input
-                    id="password"
-                    type="password"
-                    placeholder="••••••••"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className="pl-10 h-11 rounded-md border-border"
-                    autoComplete={isLogin ? 'current-password' : 'new-password'}
-                    minLength={isLogin ? undefined : 6}
-                    required
-                  />
-                </div>
-                {!isLogin && (
-                  <p className="text-xs text-muted-foreground">At least 6 characters</p>
-                )}
               </div>
             </CardContent>
-
+            
             <CardFooter className="flex flex-col gap-4 p-card-padding pt-0">
               {!isOnline && (
                 <div className="flex items-center gap-2 text-xs text-warning">
@@ -269,9 +317,9 @@ export default function FranchiseeAuth() {
                   <span>You're offline. Sign in will work when you're back online.</span>
                 </div>
               )}
-              <Button
-                type="submit"
-                className="w-full h-11 rounded-md font-semibold gap-2"
+              <Button 
+                type="submit" 
+                className="w-full h-11 rounded-md font-semibold gap-2" 
                 disabled={loading || !isOnline}
               >
                 {loading ? (
@@ -283,13 +331,10 @@ export default function FranchiseeAuth() {
                   </>
                 )}
               </Button>
-
+              
               <button
                 type="button"
-                onClick={() => {
-                  setIsLogin(!isLogin);
-                  setPassword('');
-                }}
+                onClick={() => setIsLogin(!isLogin)}
                 className="text-body text-muted-foreground hover:text-foreground transition-colors"
               >
                 {isLogin ? "Don't have an account? Sign up" : 'Already have an account? Sign in'}

@@ -16,12 +16,7 @@ import {
   Menu,
   CheckCircle2,
   Webhook,
-  Search,
-  Tag,
-  Package,
-  Trophy,
-  KeyRound,
-  Layers
+  Search
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import igniteLogo from '@/assets/ignite-logo.webp';
@@ -38,15 +33,10 @@ const navItems = [
   { href: '/portals', label: 'Portals', icon: Building2 },
   { href: '/brands', label: 'Brands', icon: Users },
   { href: '/plans', label: 'Plans', icon: FileText },
-  { href: '/admin/skus', label: 'SKU Catalog', icon: Tag },
-  { href: '/admin/products', label: 'Products', icon: Layers },
-  { href: '/admin/packages', label: 'Packages', icon: Package },
-  { href: '/admin/programs', label: 'Programs', icon: Trophy },
   { href: '/admin/contracts', label: 'Contracts', icon: ScrollText },
   { href: '/admin/webhooks', label: 'Webhooks', icon: Webhook },
   { href: '/admin/logs', label: 'Activity Logs', icon: Activity },
   { href: '/admin/users', label: 'User Management', icon: Shield, superAdminOnly: true },
-  { href: '/admin/api-keys', label: 'API Keys', icon: KeyRound, superAdminOnly: true },
 ];
 
 function NavContent({ role, location, onItemClick }: { 
@@ -115,7 +105,7 @@ export function AdminLayout({ children }: AdminLayoutProps) {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key?.toLowerCase() === 'k' && (event.metaKey || event.ctrlKey)) {
+      if (event.key.toLowerCase() === 'k' && (event.metaKey || event.ctrlKey)) {
         event.preventDefault();
         setIsSearchOpen((current) => !current);
       }

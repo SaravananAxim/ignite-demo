@@ -9,12 +9,11 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { toast } from '@/hooks/use-toast';
 import { z } from 'zod';
-import { Mail, Lock, ArrowRight, Loader2, WifiOff } from 'lucide-react';
+import { Mail, ArrowRight, Loader2, WifiOff, Lock } from 'lucide-react';
 import igniteLogo from '@/assets/ignite-logo.webp';
 
-const emailSchema = z.string().email('Please enter a valid email address');
-const credentialsSchema = z.object({
-  email: emailSchema,
+const authSchema = z.object({
+  email: z.string().email('Please enter a valid email address'),
   password: z.string().min(1, 'Please enter your password'),
 });
 
@@ -52,14 +51,14 @@ export default function Auth() {
     }
   }, [user, role, navigate, portal]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!isOnline) {
       toast.error('You are offline. Please check your connection and try again.');
       return;
     }
 
-    const validation = credentialsSchema.safeParse({ email, password });
+    const validation = authSchema.safeParse({ email, password });
     if (!validation.success) {
       toast.error(validation.error.errors[0].message);
       return;
@@ -70,16 +69,11 @@ export default function Auth() {
       const { error } = await signIn(email, password);
 
       if (error) {
-        if (error.message.toLowerCase().includes('invalid login credentials')) {
-          toast.error('Incorrect email or password.');
-        } else if (error.message.toLowerCase().includes('email not confirmed')) {
-          toast.error('Please confirm your email before signing in.');
-        } else {
-          toast.error(error.message);
-        }
+        toast.error(error.message || 'Unable to sign in. Please check your credentials and try again.');
         return;
       }
-      // Success: onAuthStateChange sets user/role and the effect above redirects.
+
+      toast.success('Signed in.');
     } catch (err) {
       toast.error('An unexpected error occurred. Please try again.');
     } finally {
@@ -88,21 +82,28 @@ export default function Auth() {
   };
 
   const handleForgotPassword = async () => {
-    const validation = emailSchema.safeParse(email);
-    if (!validation.success) {
-      toast.error('Enter your email above, then select "Forgot password".');
+    if (!isOnline) {
+      toast.error('You are offline. Please check your connection and try again.');
       return;
     }
+
+    const emailValidation = z.object({ email: z.string().email('Please enter a valid email address') }).safeParse({ email });
+    if (!emailValidation.success) {
+      toast.error(emailValidation.error.errors[0].message);
+      return;
+    }
+
     setLoading(true);
     try {
       const { error } = await resetPassword(email);
       if (error) {
-        toast.error(error.message);
+        toast.error(error.message || 'Could not send password reset email.');
         return;
       }
-      toast.success('If an account exists for that email, a reset link is on its way.');
+
+      toast.success('Password reset email sent. Check your inbox.');
     } catch {
-      toast.error('An unexpected error occurred. Please try again.');
+      toast.error('Something went wrong. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -118,7 +119,7 @@ export default function Auth() {
           <div>
             <CardTitle className="text-page-title text-foreground">Admin sign in</CardTitle>
             <CardDescription className="text-body text-muted-foreground mt-2">
-              Sign in to access the admin portal
+              Sign in to access the admin portal with your email and password
             </CardDescription>
             <p className="text-xs text-muted-foreground mt-2">
               Franchisees: Use your brand&apos;s signup portal to access your account.
@@ -126,7 +127,7 @@ export default function Auth() {
           </div>
         </CardHeader>
 
-        <form onSubmit={handleSubmit}>
+        <form onSubmit={handleSignIn}>
           <CardContent className="space-y-5 p-card-padding">
             <div className="space-y-2">
               <Label htmlFor="email" className="text-body-medium text-foreground">Email</Label>
@@ -139,35 +140,23 @@ export default function Auth() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="pl-10 h-11 rounded-md border-border"
-                  autoComplete="email"
                   required
                 />
               </div>
             </div>
-
             <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="password" className="text-body-medium text-foreground">Password</Label>
-                <button
-                  type="button"
-                  onClick={handleForgotPassword}
-                  disabled={loading}
-                  className="text-xs text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
-                >
-                  Forgot password?
-                </button>
-              </div>
+              <Label htmlFor="password" className="text-body-medium text-foreground">Password</Label>
               <div className="relative">
                 <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                 <Input
                   id="password"
                   type="password"
-                  placeholder="••••••••"
+                  placeholder="Enter your password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="pl-10 h-11 rounded-md border-border"
-                  autoComplete="current-password"
                   required
+                  autoComplete="current-password"
                 />
               </div>
             </div>
@@ -193,6 +182,15 @@ export default function Auth() {
                   <ArrowRight className="w-4 h-4" />
                 </>
               )}
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              className="w-full"
+              onClick={handleForgotPassword}
+              disabled={loading || !isOnline}
+            >
+              Forgot password?
             </Button>
           </CardFooter>
         </form>

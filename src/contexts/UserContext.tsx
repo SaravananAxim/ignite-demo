@@ -5,6 +5,12 @@ import { PORTAL } from '@/constants';
 
 export type AppRole = 'admin' | 'franchisee' | 'super_admin';
 
+export interface SignInWithOtpOptions {
+  emailRedirectTo?: string;
+  data?: Record<string, unknown>;
+  shouldCreateUser?: boolean;
+}
+
 interface UserContextType {
   user: User | null;
   session: Session | null;
@@ -13,6 +19,8 @@ interface UserContextType {
   loading: boolean;
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
   signUp: (email: string, password: string, metadata?: Record<string, unknown>, emailRedirectTo?: string) => Promise<{ error: Error | null }>;
+  signInWithOtp: (email: string, options?: SignInWithOtpOptions) => Promise<{ error: Error | null }>;
+  verifyOtp: (email: string, token: string) => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
   resetPassword: (email: string) => Promise<{ error: Error | null }>;
   updatePassword: (newPassword: string) => Promise<{ error: Error | null }>;
@@ -147,6 +155,28 @@ export function UserProvider({ children }: UserProviderProps) {
     return { error: error as Error | null };
   };
 
+  const signInWithOtp = async (email: string, options?: SignInWithOtpOptions) => {
+    const opts: { emailRedirectTo?: string; data?: Record<string, unknown>; shouldCreateUser?: boolean } = {};
+    if (options?.emailRedirectTo != null) opts.emailRedirectTo = options.emailRedirectTo;
+    if (options?.data != null) opts.data = options.data;
+    if (options?.shouldCreateUser != null) opts.shouldCreateUser = options.shouldCreateUser;
+
+    const { error } = await supabase.auth.signInWithOtp({
+      email,
+      options: Object.keys(opts).length ? opts : undefined,
+    });
+    return { error: error as Error | null };
+  };
+
+  const verifyOtp = async (email: string, token: string) => {
+    const { error } = await supabase.auth.verifyOtp({
+      email,
+      token,
+      type: 'email',
+    });
+    return { error: error as Error | null };
+  };
+
   const signOut = async () => {
     await supabase.auth.signOut();
     setUser(null);
@@ -194,6 +224,8 @@ export function UserProvider({ children }: UserProviderProps) {
         loading: isLoading,
         signIn,
         signUp,
+        signInWithOtp,
+        verifyOtp,
         signOut,
         resetPassword,
         updatePassword,

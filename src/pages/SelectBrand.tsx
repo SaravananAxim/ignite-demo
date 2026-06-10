@@ -11,7 +11,6 @@ import { ResumeOnboardingBanner } from '@/components/onboarding/ResumeOnboarding
 import { AlertCircle, Building2 } from 'lucide-react';
 
 export default function SelectBrand() {
-  debugger
   const { portal } = usePortal();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
