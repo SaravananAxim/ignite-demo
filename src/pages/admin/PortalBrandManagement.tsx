@@ -61,6 +61,7 @@ interface Brand {
   name: string;
   portal_id: string;
   logo_url: string | null;
+  multi_plan_logic: boolean | null;
   domain_pattern: string | null;
   primary_color: string | null;
   accent_color: string | null;
@@ -133,6 +134,7 @@ export default function PortalBrandManagement() {
     portal_id: '',
     domain_pattern: '',
     logo_url: '',
+    multi_plan_logic: false,
     primary_color: '#3B82F6',
     accent_color: '#10B981',
   });
@@ -178,6 +180,7 @@ export default function PortalBrandManagement() {
           name,
           portal_id,
           logo_url,
+          multi_plan_logic,
           domain_pattern,
           primary_color,
           accent_color,
@@ -230,6 +233,7 @@ export default function PortalBrandManagement() {
           portal_id: brandForm.portal_id,
           domain_pattern: brandForm.domain_pattern || null,
           logo_url: brandForm.logo_url || null,
+          multi_plan_logic: brandForm.multi_plan_logic,
           primary_color: brandForm.primary_color,
           accent_color: brandForm.accent_color,
         })
@@ -263,6 +267,7 @@ export default function PortalBrandManagement() {
           portal_id: brandForm.portal_id,
           domain_pattern: brandForm.domain_pattern || null,
           logo_url: brandForm.logo_url || null,
+          multi_plan_logic: brandForm.multi_plan_logic,
           primary_color: brandForm.primary_color,
           accent_color: brandForm.accent_color,
         })
@@ -414,6 +419,7 @@ export default function PortalBrandManagement() {
       portal_id: '',
       domain_pattern: '',
       logo_url: '',
+      multi_plan_logic: false,
       primary_color: '#3B82F6',
       accent_color: '#10B981',
     });
@@ -439,6 +445,7 @@ export default function PortalBrandManagement() {
       portal_id: brand.portal_id,
       domain_pattern: brand.domain_pattern || '',
       logo_url: brand.logo_url || '',
+      multi_plan_logic: brand.multi_plan_logic === true,
       primary_color: brand.primary_color || '#3B82F6',
       accent_color: brand.accent_color || '#10B981',
     });
@@ -545,6 +552,7 @@ export default function PortalBrandManagement() {
                     <TableHead>Domain Pattern</TableHead>
                     <TableHead>Theme</TableHead>
                     <TableHead>Plans</TableHead>
+                    <TableHead>Plan Selection</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -580,6 +588,11 @@ export default function PortalBrandManagement() {
                       <TableCell>
                         <Badge variant="secondary">
                           {brand.plans?.[0]?.count || 0} plans
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={brand.multi_plan_logic ? 'default' : 'outline'}>
+                          {brand.multi_plan_logic ? 'Multi-plan' : 'Single plan'}
                         </Badge>
                       </TableCell>
                       <TableCell className="text-right">
@@ -745,6 +758,21 @@ export default function PortalBrandManagement() {
                 value={brandForm.logo_url}
                 onChange={(e) => setBrandForm(prev => ({ ...prev, logo_url: e.target.value }))}
                 placeholder="https://example.com/logo.png"
+              />
+            </div>
+            <div className="flex items-center justify-between rounded-lg border p-3">
+              <div className="space-y-1">
+                <Label htmlFor="multi-plan-logic" className="cursor-pointer text-sm font-medium">
+                  Enable multi-plan selection
+                </Label>
+                <p className="text-xs text-muted-foreground">
+                  When enabled, users can select one plan per category during enrollment.
+                </p>
+              </div>
+              <Switch
+                id="multi-plan-logic"
+                checked={brandForm.multi_plan_logic}
+                onCheckedChange={(checked) => setBrandForm(prev => ({ ...prev, multi_plan_logic: checked }))}
               />
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

@@ -1,4 +1,4 @@
-import { useState, useEffect, forwardRef } from "react";
+import { useState, useEffect, forwardRef, useMemo } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -13,7 +13,64 @@ import { Loader2, ArrowRight, ArrowLeft, FileText, PenTool, AlertCircle } from "
 import { toast } from '@/hooks/use-toast';
 import { replacePlaceholders, sanitizeContractHtml, insertSignatureImages, generateContractPDF } from "@/lib/pdfGenerator";
 import { activityLogger } from "@/lib/activityLogger";
+import { applyConditionalSections, buildSelectedCategorySet } from "@/lib/contractSections";
 import { format } from "date-fns";
+
+
+type ContractBrand = {
+  name: string | null;
+};
+
+type ContractPlan = {
+  id: string;
+  name: string | null;
+  category: string | null;
+  monthly_price: number | null;
+  monthly_price_with_media: number | null;
+  setup_fee: number | null;
+  contract_template_id: string | null;
+};
+
+type SelectedContractPlan = {
+  plan: ContractPlan;
+  category: string;
+  isPrimary: boolean;
+};
+
+const DEFAULT_PLAN_CATEGORY = "Other";
+const EMPTY_SELECTED_PLANS: SelectedContractPlan[] = [];
+
+const formatCurrency = (amount: number) => `$${amount.toLocaleString()}`;
+
+const getPlanAmount = (amount: number | string | null | undefined) => Number(amount) || 0;
+
+const buildSelectedPlansTable = (selectedPlans: SelectedContractPlan[]) => {
+  if (selectedPlans.length === 0) return "";
+
+  const rows = selectedPlans
+    .map(({ plan, category }) => `
+      <tr>
+        <td>${plan.name || ""}</td>
+        <td>${category}</td>
+        <td>${formatCurrency(getPlanAmount(plan.monthly_price))}</td>
+      </tr>
+    `)
+    .join("");
+
+  return `
+    <table>
+      <thead>
+        <tr>
+          <th>Plan</th>
+          <th>Category</th>
+          <th>Monthly Price</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+};
+
 
 const ContractReview = forwardRef<HTMLDivElement, Record<string, never>>(function ContractReview(_props, ref) {
   const navigate = useNavigate();
@@ -43,8 +100,54 @@ const ContractReview = forwardRef<HTMLDivElement, Record<string, never>>(functio
     enabled: !!franchiseeId,
   });
 
-  // Fetch the contract template assigned to the franchisee's plan
-  const planTemplateId = (franchisee?.plans as any)?.contract_template_id ?? null;
+  // Fetch all persisted plan selections for this franchisee. The first/primary
+  // selection drives the contract template, while all selections drive pricing,
+  // plan/category placeholders, and conditional plan-category sections.
+  const { data: persistedSelectedPlans = EMPTY_SELECTED_PLANS, isLoading: selectedPlansLoading } = useQuery({
+    queryKey: ["franchisee-selected-plans", franchiseeId],
+    queryFn: async () => {
+      if (!franchiseeId) return [];
+
+      const { data, error } = await supabase
+        .from("franchisee_plans")
+        .select("category, is_primary, plans(id, name, category, monthly_price, monthly_price_with_media, setup_fee, contract_template_id)")
+        .eq("franchisee_id", franchiseeId)
+        .order("is_primary", { ascending: false })
+        .order("category", { ascending: true });
+
+      if (error) throw error;
+
+      return (data || [])
+        .filter((selection) => !!selection.plans)
+        .map((selection) => {
+          const plan = selection.plans as ContractPlan;
+          return {
+            plan,
+            category: selection.category || plan.category || DEFAULT_PLAN_CATEGORY,
+            isPrimary: selection.is_primary === true,
+          };
+        });
+    },
+    enabled: !!franchiseeId,
+  });
+
+  const selectedPlans = useMemo<SelectedContractPlan[]>(() => {
+    if (persistedSelectedPlans.length > 0) {
+      return persistedSelectedPlans;
+    }
+
+    const plan = franchisee?.plans as ContractPlan | null | undefined;
+    return plan
+      ? [{ plan, category: plan.category || DEFAULT_PLAN_CATEGORY, isPrimary: true }]
+      : [];
+  }, [franchisee?.plans, persistedSelectedPlans]);
+
+  const primarySelectedPlan = useMemo(
+    () => selectedPlans.find((selection) => selection.isPrimary) || selectedPlans[0] || null,
+    [selectedPlans],
+  );
+
+  const planTemplateId = primarySelectedPlan?.plan.contract_template_id ?? null;
   const { data: template, isLoading: templateLoading } = useQuery({
     queryKey: ["contract-template", planTemplateId],
     queryFn: async () => {
@@ -57,7 +160,7 @@ const ContractReview = forwardRef<HTMLDivElement, Record<string, never>>(functio
       if (error) throw error;
       return data;
     },
-    enabled: !franchiseeLoading && !!planTemplateId,
+    enabled: !franchiseeLoading && !selectedPlansLoading && !!planTemplateId,
   });
 
   // Redirect guards
@@ -122,16 +225,32 @@ const ContractReview = forwardRef<HTMLDivElement, Record<string, never>>(functio
     if (!template || !franchisee) return "";
     
     const locationDetails = franchisee.location_details as Record<string, string> || {};
-    const plan = franchisee.plans as any;
-    const brand = franchisee.brands as any;
-    const includePaidMedia = franchisee.include_paid_media === true;
+    const brand = franchisee.brands as ContractBrand | null;
     const isNewLocation = franchisee.is_new_location === true;
+    const effectiveSelectedPlans = selectedPlans;
+    const selectedCategoryLabels = Array.from(
+      new Set(effectiveSelectedPlans.map(({ category }) => category || DEFAULT_PLAN_CATEGORY)),
+    );
+    const selectedCategorySet = buildSelectedCategorySet(selectedCategoryLabels);
+    const selectedPlanNames = effectiveSelectedPlans
+      .map(({ plan }) => plan.name)
+      .filter(Boolean)
+      .join(", ");
 
-    // Calculate pricing
-    const monthlyPrice = plan?.monthly_price || 0;
-    const paidMediaFee = plan?.monthly_price_with_media || 0;
-    const setupFee = plan?.setup_fee || 0;
-    const totalMonthly = includePaidMedia ? monthlyPrice + paidMediaFee : monthlyPrice;
+    // Calculate aggregate pricing across every selected plan.
+    const monthlyPrice = effectiveSelectedPlans.reduce(
+      (total, { plan }) => total + getPlanAmount(plan.monthly_price),
+      0,
+    );
+    const paidMediaFee = effectiveSelectedPlans.reduce(
+      (total, { plan }) => total + getPlanAmount(plan.monthly_price_with_media),
+      0,
+    );
+    const setupFee = effectiveSelectedPlans.reduce(
+      (total, { plan }) => total + getPlanAmount(plan.setup_fee),
+      0,
+    );
+    const totalMonthly = monthlyPrice;
 
     // Build full address
     const fullAddress = [
@@ -167,12 +286,15 @@ const ContractReview = forwardRef<HTMLDivElement, Record<string, never>>(functio
       // Brand & Plan
       brandName: brand?.name || "",
       portalName: "Ignite Visibility",
-      planName: plan?.name || "",
-      monthlyPrice: `$${monthlyPrice.toLocaleString()}`,
-      setupFee: setupFee ? `$${setupFee.toLocaleString()}` : "$0",
-      paidMediaFee: paidMediaFee ? `$${paidMediaFee.toLocaleString()}` : "$0",
+      planName: selectedPlanNames,
+      selectedPlanNames,
+      selectedPlanCategories: selectedCategoryLabels.join(", "),
+      selectedPlansTable: buildSelectedPlansTable(effectiveSelectedPlans),
+      monthlyPrice: formatCurrency(monthlyPrice),
+      setupFee: setupFee ? formatCurrency(setupFee) : "$0",
+      paidMediaFee: paidMediaFee ? formatCurrency(paidMediaFee) : "$0",
       paid_media_budget: franchisee.paid_media_budget || "",
-      totalMonthlyPrice: `$${totalMonthly.toLocaleString()}`,
+      totalMonthlyPrice: formatCurrency(totalMonthly),
       
       // Dates (use selected effective date from payment step; format for contract)
       // Append 'T00:00:00' to date-only strings so JS parses them as local time, not UTC
@@ -202,38 +324,7 @@ const ContractReview = forwardRef<HTMLDivElement, Record<string, never>>(functio
       franchiseeAddress: fullAddress || franchisee.address || "",
     };
 
-    let html = template.html_content;
-
-    // Normalize legacy entity-encoded markers (produced by Quill's insertText) to {{}} format.
-    // Quill escapes < and > when inserting plain text, so <!-- section_PaidMedia --> becomes
-    // &lt;!-- section_PaidMedia --&gt; in the stored HTML. Normalize to {{}} so the regex below
-    // can match them reliably regardless of how the template was authored.
-    html = html
-      .replace(/&lt;!--\s*section_PaidMedia\s*--&gt;/gi, "{{#section:PaidMedia}}")
-      .replace(/&lt;!--\s*\/section_PaidMedia\s*--&gt;/gi, "{{/section:PaidMedia}}")
-      .replace(/&lt;!--\s*section_NewLocation\s*--&gt;/gi, "{{#section:NewLocation}}")
-      .replace(/&lt;!--\s*\/section_NewLocation\s*--&gt;/gi, "{{/section:NewLocation}}");
-
-    // Handle conditional Paid Media: only show section if paid media is enabled and selected
-    if (!includePaidMedia) {
-      // Remove entire Paid Media section (markers + content) so nothing from it appears
-      html = html.replace(/\{\{#section:PaidMedia\}\}[\s\S]*?\{\{\/section:PaidMedia\}\}/gi, "");
-      // Also handle raw HTML comment format (if template was authored outside the editor)
-      html = html.replace(/<!--\s*section_PaidMedia\s*-->[\s\S]*?<!--\s*\/section_PaidMedia\s*-->/gi, "");
-    } else {
-      // Show section; remove only the markers so the content is visible
-      html = html.replace(/\{\{[#/]?section:PaidMedia\}\}/gi, "");
-      html = html.replace(/<!--\s*\/?section_PaidMedia\s*-->/gi, "");
-    }
-
-    // Handle conditional New Location sections
-    if (!isNewLocation) {
-      html = html.replace(/\{\{#section:NewLocation\}\}[\s\S]*?\{\{\/section:NewLocation\}\}/gi, "");
-      html = html.replace(/<!--\s*section_NewLocation\s*-->[\s\S]*?<!--\s*\/section_NewLocation\s*-->/gi, "");
-    } else {
-      html = html.replace(/\{\{[#/]?section:NewLocation\}\}/gi, "");
-      html = html.replace(/<!--\s*\/?section_NewLocation\s*-->/gi, "");
-    }
+    const html = applyConditionalSections(template.html_content, selectedCategorySet, isNewLocation);
 
     let result = replacePlaceholders(html, placeholderValues);
     result = sanitizeContractHtml(result);
@@ -352,7 +443,7 @@ const ContractReview = forwardRef<HTMLDivElement, Record<string, never>>(functio
     }
   };
 
-  const isLoading = franchiseeLoading || templateLoading;
+  const isLoading = franchiseeLoading || selectedPlansLoading || templateLoading;
 
   if (isLoading) {
     return (

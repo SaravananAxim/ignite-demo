@@ -57,6 +57,7 @@ export type Database = {
           domain_pattern: string | null
           existing_customer_logic: boolean
           id: string
+          multi_plan_logic: boolean | null
           logo_url: string | null
           name: string
           portal_id: string
@@ -69,6 +70,7 @@ export type Database = {
           existing_customer_logic?: boolean
           id?: string
           logo_url?: string | null
+          multi_plan_logic?: boolean | null
           name: string
           portal_id: string
           primary_color?: string | null
@@ -80,6 +82,7 @@ export type Database = {
           existing_customer_logic?: boolean
           id?: string
           logo_url?: string | null
+          multi_plan_logic?: boolean | null
           name?: string
           portal_id?: string
           primary_color?: string | null
@@ -258,6 +261,51 @@ export type Database = {
           },
           {
             foreignKeyName: "franchisees_plan_id_fkey"
+            columns: ["plan_id"]
+            isOneToOne: false
+            referencedRelation: "plans"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      franchisee_plans: {
+        Row: {
+          category: string
+          created_at: string
+          franchisee_id: string
+          id: string
+          is_primary: boolean
+          plan_id: string
+          updated_at: string
+        }
+        Insert: {
+          category?: string
+          created_at?: string
+          franchisee_id: string
+          id?: string
+          is_primary?: boolean
+          plan_id: string
+          updated_at?: string
+        }
+        Update: {
+          category?: string
+          created_at?: string
+          franchisee_id?: string
+          id?: string
+          is_primary?: boolean
+          plan_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "franchisee_plans_franchisee_id_fkey"
+            columns: ["franchisee_id"]
+            isOneToOne: false
+            referencedRelation: "franchisees"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "franchisee_plans_plan_id_fkey"
             columns: ["plan_id"]
             isOneToOne: false
             referencedRelation: "plans"

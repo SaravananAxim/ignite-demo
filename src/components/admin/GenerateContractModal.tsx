@@ -20,9 +20,36 @@ import { Loader2, FileText, AlertCircle } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { ContractTemplateRow } from "@/types/contract";
 import { replacePlaceholders, sanitizeContractHtml } from "@/lib/pdfGenerator";
+import { applyConditionalSections, buildSelectedCategorySet } from "@/lib/contractSections";
 import { ContractPreview } from "./ContractPreview";
 import { supabase } from "@/integrations/supabase/client";
 import { format } from "date-fns";
+
+
+type ContractBrand = {
+  name: string | null;
+};
+
+type ContractPlan = {
+  id: string;
+  name: string | null;
+  category: string | null;
+  monthly_price: number | null;
+  monthly_price_with_media: number | null;
+  setup_fee: number | null;
+};
+
+type SelectedContractPlan = {
+  plan: ContractPlan;
+  category: string;
+  isPrimary: boolean;
+};
+
+const DEFAULT_PLAN_CATEGORY = "Other";
+const EMPTY_SELECTED_PLANS: SelectedContractPlan[] = [];
+
+const formatCurrency = (amount: number) => `$${amount.toLocaleString()}`;
+const getPlanAmount = (amount: number | string | null | undefined) => Number(amount) || 0;
 
 interface GenerateContractModalProps {
   open: boolean;
@@ -54,20 +81,87 @@ export function GenerateContractModal({
 
   const selectedFranchisee = franchisees?.find(f => f.id === selectedFranchiseeId);
 
+  const { data: persistedSelectedPlans = EMPTY_SELECTED_PLANS, isLoading: loadingSelectedPlans } = useQuery({
+    queryKey: ["franchisee-selected-plans-for-contract-preview", selectedFranchiseeId],
+    queryFn: async () => {
+      if (!selectedFranchiseeId) return [];
+
+      const { data, error } = await supabase
+        .from("franchisee_plans")
+        .select("category, is_primary, plans(id, name, category, monthly_price, monthly_price_with_media, setup_fee)")
+        .eq("franchisee_id", selectedFranchiseeId)
+        .order("is_primary", { ascending: false })
+        .order("category", { ascending: true });
+
+      if (error) throw error;
+
+      return (data || [])
+        .filter((selection) => !!selection.plans)
+        .map((selection) => {
+          const plan = selection.plans as ContractPlan;
+          return {
+            plan,
+            category: selection.category || plan.category || DEFAULT_PLAN_CATEGORY,
+            isPrimary: selection.is_primary === true,
+          };
+        });
+    },
+    enabled: open && !!selectedFranchiseeId,
+  });
+
+  const selectedPlans = useMemo<SelectedContractPlan[]>(() => {
+    if (persistedSelectedPlans.length > 0) {
+      return persistedSelectedPlans;
+    }
+
+    const plan = selectedFranchisee?.plans as ContractPlan | null | undefined;
+    return plan
+      ? [{ plan, category: plan.category || DEFAULT_PLAN_CATEGORY, isPrimary: true }]
+      : [];
+  }, [selectedFranchisee?.plans, persistedSelectedPlans]);
+
+  const selectedCategoryLabels = useMemo(
+    () => Array.from(new Set(selectedPlans.map(({ category }) => category || DEFAULT_PLAN_CATEGORY))),
+    [selectedPlans],
+  );
+
+  const selectedCategorySet = useMemo(
+    () => buildSelectedCategorySet(selectedCategoryLabels),
+    [selectedCategoryLabels],
+  );
+
   // Build placeholder values from selected franchisee
   const placeholderValues = useMemo(() => {
     if (!selectedFranchisee) return {};
     
     const f = selectedFranchisee;
     const locationDetails = (f.location_details as Record<string, string>) || {};
-    const plan = f.plans as any;
-    const brand = f.brands as any;
+    const plan = f.plans as ContractPlan | null;
+    const brand = f.brands as ContractBrand | null;
+    const effectiveSelectedPlans = selectedPlans.length > 0
+      ? selectedPlans
+      : plan
+        ? [{ plan, category: plan.category || DEFAULT_PLAN_CATEGORY, isPrimary: true }]
+        : [];
+    const selectedPlanNames = effectiveSelectedPlans
+      .map(({ plan }) => plan.name)
+      .filter(Boolean)
+      .join(", ");
 
-    // Calculate pricing
-    const monthlyPrice = plan?.monthly_price || 0;
-    const paidMediaFee = plan?.monthly_price_with_media || 0;
-    const setupFee = plan?.setup_fee || 0;
-    const totalMonthly = f.include_paid_media ? monthlyPrice + paidMediaFee : monthlyPrice;
+    // Calculate aggregate pricing across every selected plan.
+    const monthlyPrice = effectiveSelectedPlans.reduce(
+      (total, { plan }) => total + getPlanAmount(plan.monthly_price),
+      0,
+    );
+    const paidMediaFee = effectiveSelectedPlans.reduce(
+      (total, { plan }) => total + getPlanAmount(plan.monthly_price_with_media),
+      0,
+    );
+    const setupFee = effectiveSelectedPlans.reduce(
+      (total, { plan }) => total + getPlanAmount(plan.setup_fee),
+      0,
+    );
+    const totalMonthly = monthlyPrice;
 
     // Build full address
     const fullAddress = [
@@ -102,10 +196,12 @@ export function GenerateContractModal({
       // Brand & Plan
       brandName: brand?.name || "",
       portalName: "Ignite Visibility",
-      planName: plan?.name || "",
-      monthlyPrice: `$${monthlyPrice.toLocaleString()}`,
-      setupFee: setupFee ? `$${setupFee.toLocaleString()}` : "$0",
-      paidMediaFee: paidMediaFee ? `$${paidMediaFee.toLocaleString()}` : "$0",
+      planName: selectedPlanNames,
+      selectedPlanNames,
+      selectedPlanCategories: selectedCategoryLabels.join(", "),
+      monthlyPrice: formatCurrency(monthlyPrice),
+      setupFee: setupFee ? formatCurrency(setupFee) : "$0",
+      paidMediaFee: paidMediaFee ? formatCurrency(paidMediaFee) : "$0",
       paid_media_budget: f.paid_media_budget || "",
       totalMonthlyPrice: `$${totalMonthly.toLocaleString()}`,
       
@@ -136,45 +232,18 @@ export function GenerateContractModal({
       franchiseeEmail: f.email || "",
       franchiseeAddress: fullAddress || f.address || "",
     };
-  }, [selectedFranchisee]);
+  }, [selectedCategoryLabels, selectedFranchisee, selectedPlans]);
 
   // Generate HTML with conditionals handled
   const generatedHtml = useMemo(() => {
     if (!template || !selectedFranchisee) return "";
-    const includePaidMedia = selectedFranchisee.include_paid_media === true;
     const isNewLocation = selectedFranchisee.is_new_location === true;
-
-    let html = template.html_content;
-
-    // Normalize entity-encoded markers to {{}} so we can strip both formats
-    html = html
-      .replace(/&lt;!--\s*section_PaidMedia\s*--&gt;/gi, "{{#section:PaidMedia}}")
-      .replace(/&lt;!--\s*\/section_PaidMedia\s*--&gt;/gi, "{{/section:PaidMedia}}")
-      .replace(/&lt;!--\s*section_NewLocation\s*--&gt;/gi, "{{#section:NewLocation}}")
-      .replace(/&lt;!--\s*\/section_NewLocation\s*--&gt;/gi, "{{/section:NewLocation}}");
-
-    // Handle conditional Paid Media: only show section when explicitly true
-    if (!includePaidMedia) {
-      html = html.replace(/\{\{#section:PaidMedia\}\}[\s\S]*?\{\{\/section:PaidMedia\}\}/gi, "");
-      html = html.replace(/<!--\s*section_PaidMedia\s*-->[\s\S]*?<!--\s*\/section_PaidMedia\s*-->/gi, "");
-    } else {
-      html = html.replace(/\{\{[#/]?section:PaidMedia\}\}/gi, "");
-      html = html.replace(/<!--\s*\/?section_PaidMedia\s*-->/gi, "");
-    }
-
-    // Handle conditional New Location sections
-    if (!isNewLocation) {
-      html = html.replace(/\{\{#section:NewLocation\}\}[\s\S]*?\{\{\/section:NewLocation\}\}/gi, "");
-      html = html.replace(/<!--\s*section_NewLocation\s*-->[\s\S]*?<!--\s*\/section_NewLocation\s*-->/gi, "");
-    } else {
-      html = html.replace(/\{\{[#/]?section:NewLocation\}\}/gi, "");
-      html = html.replace(/<!--\s*\/?section_NewLocation\s*-->/gi, "");
-    }
+    const html = applyConditionalSections(template.html_content, selectedCategorySet, isNewLocation);
 
     let result = replacePlaceholders(html, placeholderValues);
     result = sanitizeContractHtml(result);
     return result;
-  }, [template, selectedFranchisee, placeholderValues]);
+  }, [template, selectedFranchisee, placeholderValues, selectedCategorySet]);
 
   const handleClose = () => {
     setSelectedFranchiseeId("");
@@ -232,7 +301,7 @@ export function GenerateContractModal({
                       <div className="flex flex-col">
                         <span>{franchisee.name}</span>
                         <span className="text-xs text-muted-foreground">
-                          {franchisee.email} • {(franchisee.brands as any)?.name || "No brand"}
+                          {franchisee.email} • {(franchisee.brands as ContractBrand | null)?.name || "No brand"}
                         </span>
                       </div>
                     </SelectItem>
@@ -256,9 +325,9 @@ export function GenerateContractModal({
               <div className="grid grid-cols-1 gap-2 text-sm p-4 bg-muted/30 rounded-lg max-h-[200px] overflow-y-auto sm:grid-cols-2">
                 <div><span className="text-muted-foreground">Name:</span> {selectedFranchisee.name}</div>
                 <div><span className="text-muted-foreground">Email:</span> {selectedFranchisee.email}</div>
-                <div><span className="text-muted-foreground">Brand:</span> {(selectedFranchisee.brands as any)?.name || "—"}</div>
-                <div><span className="text-muted-foreground">Plan:</span> {(selectedFranchisee.plans as any)?.name || "—"}</div>
-                <div><span className="text-muted-foreground">Paid Media:</span> {selectedFranchisee.include_paid_media ? "Yes" : "No"}</div>
+                <div><span className="text-muted-foreground">Brand:</span> {(selectedFranchisee.brands as ContractBrand | null)?.name || "—"}</div>
+                <div><span className="text-muted-foreground">Plan:</span> {selectedPlans.map(({ plan }) => plan.name).filter(Boolean).join(", ") || "—"}</div>
+                <div><span className="text-muted-foreground">Categories:</span> {selectedCategoryLabels.join(", ") || "—"}</div>
                 <div><span className="text-muted-foreground">New Location:</span> {selectedFranchisee.is_new_location ? "Yes" : "No"}</div>
               </div>
             </div>
@@ -271,7 +340,7 @@ export function GenerateContractModal({
           </Button>
           <Button 
             onClick={() => setShowPreview(true)}
-            disabled={!selectedFranchiseeId}
+            disabled={!selectedFranchiseeId || loadingSelectedPlans}
           >
             Generate Preview
           </Button>

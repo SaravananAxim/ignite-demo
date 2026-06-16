@@ -10,6 +10,7 @@ interface PendingOnboarding {
   franchiseeId: string;
   brandId: string;
   planId: string;
+  planIds?: string[];
   savedAt: string;
 }
 
@@ -26,11 +27,18 @@ interface OnboardingResumeData {
 /**
  * Save the franchisee ID for resume capability after payment
  */
-export function savePendingOnboarding(franchiseeId: string, brandId: string, planId: string) {
+export function savePendingOnboarding(
+  franchiseeId: string,
+  brandId: string,
+  planId: string,
+  planIds: string[] = [planId],
+) {
+  const uniquePlanIds = Array.from(new Set(planIds.length > 0 ? planIds : [planId]));
   const data: PendingOnboarding = {
     franchiseeId,
     brandId,
     planId,
+    planIds: uniquePlanIds,
     savedAt: new Date().toISOString(),
   };
   localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
@@ -52,6 +60,10 @@ function getPendingOnboarding(): PendingOnboarding | null {
   
   try {
     const data = JSON.parse(stored) as PendingOnboarding;
+
+    if (!data.planIds && data.planId) {
+      data.planIds = [data.planId];
+    }
     
     // Check if it's older than 7 days
     const savedAt = new Date(data.savedAt);
@@ -139,7 +151,15 @@ export function useOnboardingResume() {
         .maybeSingle();
       
       if (error || !data) return null;
-      return data;
+
+      const { data: selectedPlans } = await supabase
+        .from('franchisee_plans')
+        .select('category, is_primary, plans(id, name)')
+        .eq('franchisee_id', data.id)
+        .order('is_primary', { ascending: false })
+        .order('category', { ascending: true });
+
+      return { ...data, selectedPlans: selectedPlans ?? [] };
     },
     enabled: !!user?.id,
     staleTime: 30000,
@@ -167,7 +187,14 @@ export function useOnboardingResume() {
         return null;
       }
       
-      return data;
+      const { data: selectedPlans } = await supabase
+        .from('franchisee_plans')
+        .select('category, is_primary, plans(id, name)')
+        .eq('franchisee_id', data.id)
+        .order('is_primary', { ascending: false })
+        .order('category', { ascending: true });
+
+      return { ...data, selectedPlans: selectedPlans ?? [] };
     },
     enabled: !!localStorageData?.franchiseeId && !user?.id,
     staleTime: 30000,
@@ -180,11 +207,23 @@ export function useOnboardingResume() {
 
   const brandDetails = franchisee?.brands as { name?: string } | null | undefined;
   const planDetails = franchisee?.plans as { name?: string } | null | undefined;
+  const selectedPlanDetails = (franchisee?.selectedPlans ?? []) as Array<{
+    category?: string | null;
+    plans?: { id?: string; name?: string } | null;
+  }>;
+  const selectedPlanNames = selectedPlanDetails
+    .map((selection) => {
+      const planName = selection.plans?.name;
+      if (!planName) return null;
+
+      return selection.category ? `${selection.category}: ${planName}` : planName;
+    })
+    .filter(Boolean);
   const resumeData: OnboardingResumeData | null = franchisee ? {
     franchiseeId: franchisee.id,
     franchiseeName: franchisee.name || 'Your registration',
     brandName: brandDetails?.name || 'Unknown Brand',
-    planName: planDetails?.name || 'Unknown Plan',
+    planName: selectedPlanNames.length > 0 ? selectedPlanNames.join(', ') : planDetails?.name || 'Unknown Plan',
     onboardingStep: franchisee.onboarding_step || 'intake',
     paymentStatus: franchisee.payment_status,
     resumeUrl: getResumeUrl(

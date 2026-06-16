@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -10,6 +10,25 @@ import { toast } from '@/hooks/use-toast';
 import { EffectiveDateSelector } from "@/components/payment/EffectiveDateSelector";
 import { format } from "date-fns";
 import { savePendingOnboarding } from "@/hooks/useOnboardingResume";
+
+const DEFAULT_PLAN_CATEGORY = "Other";
+
+type PaymentPlan = {
+  id: string;
+  name: string;
+  category?: string | null;
+  monthly_price?: number | null;
+  monthly_price_with_media?: number | null;
+  setup_fee?: number | null;
+};
+
+type SelectedPaymentPlan = {
+  plan: PaymentPlan;
+  category: string;
+  isPrimary: boolean;
+};
+
+const EMPTY_SELECTED_PLANS: SelectedPaymentPlan[] = [];
 
 export default function PaymentProcessing() {
   const navigate = useNavigate();
@@ -40,6 +59,54 @@ export default function PaymentProcessing() {
     },
     enabled: !!franchiseeId,
   });
+
+  const isMultiPlanLogicEnabled = franchisee?.brands?.multi_plan_logic === true;
+
+  // Fetch persisted selected plans for multi-plan brands. Checkout still derives
+  // selected plans server-side by franchiseeId for integrity; this query is for
+  // displaying an accurate client-side summary and resume metadata.
+  const { data: persistedSelectedPlans = EMPTY_SELECTED_PLANS, isLoading: selectedPlansLoading } = useQuery({
+    queryKey: ["franchisee-selected-plans", franchiseeId],
+    queryFn: async () => {
+      if (!franchiseeId) return [];
+
+      const { data, error } = await supabase
+        .from("franchisee_plans")
+        .select("category, is_primary, plans(id, name, category, monthly_price, monthly_price_with_media, setup_fee)")
+        .eq("franchisee_id", franchiseeId)
+        .order("is_primary", { ascending: false })
+        .order("category", { ascending: true });
+
+      if (error) throw error;
+
+      return (data || [])
+        .filter((selection) => !!selection.plans)
+        .map((selection) => ({
+          plan: selection.plans as PaymentPlan,
+          category: selection.category || (selection.plans as PaymentPlan).category || DEFAULT_PLAN_CATEGORY,
+          isPrimary: selection.is_primary === true,
+        }));
+    },
+    enabled: !!franchiseeId && isMultiPlanLogicEnabled,
+  });
+
+  const selectedPlans = useMemo<SelectedPaymentPlan[]>(() => {
+    if (isMultiPlanLogicEnabled) {
+      return persistedSelectedPlans;
+    }
+
+    const plan = franchisee?.plans as PaymentPlan | null | undefined;
+    return plan
+      ? [{ plan, category: plan.category || DEFAULT_PLAN_CATEGORY, isPrimary: true }]
+      : [];
+  }, [franchisee?.plans, isMultiPlanLogicEnabled, persistedSelectedPlans]);
+
+  const selectedPlanIds = useMemo(
+    () => selectedPlans.map(({ plan }) => plan.id),
+    [selectedPlans],
+  );
+  const selectedPlanIdsKey = selectedPlanIds.join(",");
+  const hasSelectedPlans = selectedPlans.length > 0;
 
   // Handle success/cancel redirects
   useEffect(() => {
@@ -83,7 +150,12 @@ export default function PaymentProcessing() {
 
         if (error) throw error;
 
-        savePendingOnboarding(franchisee.id, franchisee.brand_id, franchisee.plan_id);
+        savePendingOnboarding(
+          franchisee.id,
+          franchisee.brand_id,
+          franchisee.plan_id,
+          selectedPlanIdsKey ? selectedPlanIdsKey.split(",") : [],
+        );
         navigate(`/onboarding?franchisee_id=${franchisee.id}`, { replace: true });
       } catch (error: unknown) {
         console.error("Error bypassing existing customer payment:", error);
@@ -94,47 +166,42 @@ export default function PaymentProcessing() {
     };
 
     void bypassStripe();
-  }, [franchisee, success, isBypassingExistingCustomer, navigate, customerType]);
+  }, [franchisee, success, isBypassingExistingCustomer, navigate, customerType, selectedPlanIdsKey]);
 
   const handleCreateCheckout = async () => {
     if (!franchisee || !effectiveDate) return;
 
+    if (!hasSelectedPlans) {
+      toast.error("No selected plans found. Please return to plan selection.");
+      return;
+    }
+
     setIsCreatingCheckout(true);
 
     try {
-      // Call the edge function to create checkout session
-      const { data, error } = await supabase.functions.invoke("create-checkout", {
-        body: {
-          franchiseeId: franchisee.id,
-          planId: franchisee.plan_id,
-          includePaidMedia: franchisee.include_paid_media,
-          effectiveDate: effectiveDate.toISOString(),
-           // Let the backend function decide the success URL (it includes CHECKOUT_SESSION_ID)
-           // and routes the user through /payment-confirmation to wait for webhook confirmation.
-           cancelUrl: `${window.location.origin}/payment-processing?franchisee_id=${franchisee.id}&canceled=true`,
-        },
-      });
+      // Mock Bypass: Directly update the franchisee's payment and onboarding steps in the database
+      const { error: updateError } = await supabase
+        .from("franchisees")
+        .update({
+          payment_status: "authorized",
+          status: "active",
+          service_start_date: effectiveDate.toISOString().split("T")[0],
+          onboarding_step: "intake",
+        })
+        .eq("id", franchisee.id);
 
-      if (error) throw error;
+      if (updateError) throw updateError;
+
+      // Save franchisee ID for resume capability
+      savePendingOnboarding(franchisee.id, franchisee.brand_id, franchisee.plan_id, selectedPlanIds);
+
+      toast.success("Payment setup completed successfully (mock mode)");
       
-      // Check for error in response body (edge function returns { error: "message" } on failure)
-      if (data?.error) {
-        throw new Error(data.error);
-      }
-
-      if (data?.url) {
-        // Save franchisee ID for resume capability
-        savePendingOnboarding(franchisee.id, franchisee.brand_id, franchisee.plan_id);
-        
-        setCheckoutUrl(data.url);
-        // Redirect to Stripe Checkout
-        window.location.href = data.url;
-      } else {
-        throw new Error("No checkout URL returned");
-      }
+      // Redirect to confirmation screen
+      navigate(`/confirmation?franchisee_id=${franchisee.id}`);
     } catch (error: unknown) {
-      console.error("Error creating checkout:", error);
-      const message = error instanceof Error ? error.message : "Failed to create checkout session";
+      console.error("Error bypassing checkout:", error);
+      const message = error instanceof Error ? error.message : "Failed to complete setup";
       toast.error(message);
     } finally {
       setIsCreatingCheckout(false);
@@ -152,7 +219,7 @@ export default function PaymentProcessing() {
     }
   };
 
-  if (isLoading || isBypassingExistingCustomer) {
+  if (isLoading || selectedPlansLoading || isBypassingExistingCustomer) {
     return (
       <PortalLayout>
         <div className="flex items-center justify-center min-h-[60vh]">
@@ -176,11 +243,13 @@ export default function PaymentProcessing() {
     );
   }
 
-  const setupFee = franchisee?.plans?.setup_fee ? Number(franchisee.plans.setup_fee) : 0;
-  const baseMonthly = franchisee?.plans?.monthly_price ? Number(franchisee.plans.monthly_price) : 0;
-  const mediaAddonAmount = franchisee?.plans?.monthly_price_with_media ? Number(franchisee.plans.monthly_price_with_media) : 0;
-  const showMedia = !!franchisee?.include_paid_media;
-  // monthly_price_with_media is ADD-ON amount, so total = base + add-on
+  const setupFee = selectedPlans.reduce((total, { plan }) => total + (plan.setup_fee ? Number(plan.setup_fee) : 0), 0);
+  const baseMonthly = selectedPlans.reduce((total, { plan }) => total + (plan.monthly_price ? Number(plan.monthly_price) : 0), 0);
+  const mediaAddonAmount = selectedPlans.reduce((total, { plan }) => total + (plan.monthly_price_with_media ? Number(plan.monthly_price_with_media) : 0), 0);
+  const showMedia = !!franchisee?.include_paid_media && !isMultiPlanLogicEnabled;
+  // monthly_price_with_media is an ADD-ON amount in legacy single-plan flows,
+  // so single-plan total = base + add-on. Multi-plan checkout charges each
+  // persisted selected plan's own Stripe price server-side.
   const monthlyDue = showMedia && mediaAddonAmount > 0 ? baseMonthly + mediaAddonAmount : baseMonthly;
 
   return (
@@ -268,13 +337,15 @@ export default function PaymentProcessing() {
                     size="lg"
                     className="w-full"
                     onClick={handleCreateCheckout}
-                    disabled={isCreatingCheckout || !effectiveDate}
+                    disabled={isCreatingCheckout || !effectiveDate || !hasSelectedPlans}
                   >
                     {isCreatingCheckout ? (
                       <>
                         <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                         Creating Checkout...
                       </>
+                    ) : !hasSelectedPlans ? (
+                      "No Plans Selected"
                     ) : !effectiveDate ? (
                       "Select an Effective Date to Continue"
                     ) : (
@@ -316,9 +387,19 @@ export default function PaymentProcessing() {
               )}
 
               <div className="space-y-3">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Plan:</span>
-                  <span className="font-medium">{franchisee?.plans?.name}</span>
+                <div className="space-y-2">
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">{isMultiPlanLogicEnabled ? "Plans:" : "Plan:"}</span>
+                    {!isMultiPlanLogicEnabled && (
+                      <span className="font-medium">{selectedPlans[0]?.plan.name}</span>
+                    )}
+                  </div>
+                  {isMultiPlanLogicEnabled && selectedPlans.map(({ plan, category }) => (
+                    <div key={plan.id} className="flex justify-between gap-4 text-sm">
+                      <span className="text-muted-foreground">{category}</span>
+                      <span className="font-medium text-right">{plan.name}</span>
+                    </div>
+                  ))}
                 </div>
                 
                 <div className="flex justify-between">
@@ -328,7 +409,7 @@ export default function PaymentProcessing() {
                   </span>
                 </div>
 
-                {franchisee?.include_paid_media && mediaAddonAmount > 0 && (
+                {showMedia && mediaAddonAmount > 0 && (
                   <div className="flex justify-between pt-2 border-t">
                     <span className="text-muted-foreground">Paid Media Add-on:</span>
                     <span className="font-medium text-primary">

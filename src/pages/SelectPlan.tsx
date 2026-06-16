@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
@@ -17,6 +17,24 @@ import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
 import { savePendingOnboarding } from '@/hooks/useOnboardingResume';
 
+const DEFAULT_PLAN_CATEGORY = 'Other';
+
+type SelectedPlanMap = Record<string, string>;
+type PaidMediaMap = Record<string, boolean>;
+
+type SelectablePlan = {
+  id: string;
+  name: string;
+  category?: string | null;
+  monthly_price: number;
+  monthly_price_with_media?: number | null;
+  supports_paid_media?: boolean | null;
+  requires_paid_media?: boolean | null;
+  stripe_price_id_with_media?: string | null;
+};
+
+const getPlanCategory = (plan: SelectablePlan) => plan.category || DEFAULT_PLAN_CATEGORY;
+
 export default function SelectPlan() {
   const { portal } = usePortal();
   const { user } = useUser();
@@ -27,7 +45,9 @@ export default function SelectPlan() {
   const initialCustomerType = searchParams.get('customer_type') === 'existing' ? 'existing' : 'new';
   const [selectedCustomerType, setSelectedCustomerType] = useState<'new' | 'existing'>(initialCustomerType);
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
+  const [selectedPlanIdsByCategory, setSelectedPlanIdsByCategory] = useState<SelectedPlanMap>({});
   const [includePaidMedia, setIncludePaidMedia] = useState(false);
+  const [includePaidMediaByCategory, setIncludePaidMediaByCategory] = useState<PaidMediaMap>({});
   const [confirmationChecked, setConfirmationChecked] = useState(false);
   const [isShaking, setIsShaking] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -54,7 +74,7 @@ export default function SelectPlan() {
       
       const { data, error } = await supabase
         .from('brands')
-        .select('id, name, logo_url, existing_customer_logic')
+        .select('id, name, logo_url, existing_customer_logic, multi_plan_logic')
         .eq('id', brandId)
         .maybeSingle();
 
@@ -83,8 +103,26 @@ export default function SelectPlan() {
     enabled: !!brandId,
   });
 
-  // Reset paid media when plan changes (auto-enable if required)
+  const isMultiPlanLogicEnabled = brand?.multi_plan_logic === true;
+
+  const selectedPlans = useMemo(() => {
+    if (!plans) return [];
+
+    if (!isMultiPlanLogicEnabled) {
+      const plan = plans.find((p) => p.id === selectedPlanId);
+      return plan ? [plan] : [];
+    }
+
+    const selectedIds = new Set(Object.values(selectedPlanIdsByCategory));
+    return plans.filter((plan) => selectedIds.has(plan.id));
+  }, [isMultiPlanLogicEnabled, plans, selectedPlanId, selectedPlanIdsByCategory]);
+
+  const selectedPlan = selectedPlans[0] ?? null;
+
+  // Reset paid media when single-plan selection changes (auto-enable if required)
   useEffect(() => {
+    if (isMultiPlanLogicEnabled) return;
+
     const plan = plans?.find(p => p.id === selectedPlanId);
     if (plan?.requires_paid_media) {
       setIncludePaidMedia(true);
@@ -92,10 +130,26 @@ export default function SelectPlan() {
       setIncludePaidMedia(false);
     }
     setConfirmationChecked(false);
-  }, [selectedPlanId, plans]);
+  }, [isMultiPlanLogicEnabled, selectedPlanId, plans]);
+
+  // Keep one paid-media flag per selected category in multi-plan mode.
+  useEffect(() => {
+    if (!isMultiPlanLogicEnabled || !plans) return;
+
+    setIncludePaidMediaByCategory((current) => {
+      const next: PaidMediaMap = {};
+
+      Object.entries(selectedPlanIdsByCategory).forEach(([category, planId]) => {
+        const plan = plans.find((p) => p.id === planId);
+        next[category] = plan?.requires_paid_media ? true : current[category] ?? false;
+      });
+
+      return next;
+    });
+    setConfirmationChecked(false);
+  }, [isMultiPlanLogicEnabled, plans, selectedPlanIdsByCategory]);
 
   const isLoading = brandLoading || plansLoading;
-  const selectedPlan = plans?.find(p => p.id === selectedPlanId);
   const brandAllowsExistingCustomers = brand?.existing_customer_logic === true;
   const effectiveCustomerType = brandAllowsExistingCustomers ? selectedCustomerType : 'new';
 
@@ -115,6 +169,24 @@ export default function SelectPlan() {
     );
   };
 
+  const getIncludesPaidMedia = (plan: SelectablePlan) => {
+    if (!isMultiPlanLogicEnabled) {
+      return includePaidMedia;
+    }
+
+    return includePaidMediaByCategory[getPlanCategory(plan)] ?? false;
+  };
+
+  const setIncludesPaidMedia = (plan: SelectablePlan, checked: boolean) => {
+    if (!isMultiPlanLogicEnabled) {
+      setIncludePaidMedia(checked);
+      return;
+    }
+
+    const category = getPlanCategory(plan);
+    setIncludePaidMediaByCategory((current) => ({ ...current, [category]: checked }));
+  };
+
   const formatPrice = (price: number) => {
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
@@ -122,6 +194,46 @@ export default function SelectPlan() {
       minimumFractionDigits: 0,
       maximumFractionDigits: 0,
     }).format(price);
+  };
+
+  const getPlanMonthlyInvestment = (plan: SelectablePlan) => {
+    return getIncludesPaidMedia(plan) && canSelectPaidMedia(plan)
+      ? plan.monthly_price + (plan.monthly_price_with_media || 0)
+      : plan.monthly_price;
+  };
+
+  const handlePlanSelect = (plan: SelectablePlan) => {
+    if (!isMultiPlanLogicEnabled) {
+      setSelectedPlanId(plan.id);
+      return;
+    }
+
+    const category = getPlanCategory(plan);
+    setSelectedPlanIdsByCategory((current) => ({ ...current, [category]: plan.id }));
+  };
+
+  const persistFranchiseePlans = async (franchiseeId: string) => {
+    const selections = selectedPlans.map((plan, index) => ({
+      franchisee_id: franchiseeId,
+      plan_id: plan.id,
+      category: getPlanCategory(plan),
+      is_primary: index === 0,
+    }));
+
+    const { error: deleteError } = await supabase
+      .from('franchisee_plans')
+      .delete()
+      .eq('franchisee_id', franchiseeId);
+
+    if (deleteError) throw deleteError;
+
+    if (selections.length === 0) return;
+
+    const { error: insertError } = await supabase
+      .from('franchisee_plans')
+      .insert(selections);
+
+    if (insertError) throw insertError;
   };
 
   const handleSelectPackage = async () => {
@@ -132,8 +244,8 @@ export default function SelectPlan() {
       return;
     }
 
-    if (!selectedPlan || !brandId) {
-      toast.error('Please select a plan');
+    if (!selectedPlan || selectedPlans.length === 0 || !brandId) {
+      toast.error(isMultiPlanLogicEnabled ? 'Please select at least one plan' : 'Please select a plan');
       return;
     }
 
@@ -142,8 +254,9 @@ export default function SelectPlan() {
       return;
     }
 
-    if (includePaidMedia && !canSelectPaidMedia(selectedPlan)) {
-      toast.error('Paid media pricing is not configured for this plan. Please choose another plan or continue without paid media.');
+    const invalidPaidMediaPlan = selectedPlans.find((plan) => getIncludesPaidMedia(plan) && !canSelectPaidMedia(plan));
+    if (invalidPaidMediaPlan) {
+      toast.error(`Paid media pricing is not configured for ${invalidPaidMediaPlan.name}. Please choose another plan or continue without paid media.`);
       return;
     }
 
@@ -155,16 +268,6 @@ export default function SelectPlan() {
       // No lock-in until contract is submitted, so users can freely change plans.
       // Default to requiring payment if no portal context (safer behavior)
       const requiresPayment = portal?.require_payment !== false;
-
-      if (!requiresPayment) {
-        const params = new URLSearchParams({
-          plan_id: selectedPlan.id,
-          paid_media: String(includePaidMedia),
-          customer_type: effectiveCustomerType,
-        });
-        navigate(`/onboarding?${params.toString()}`);
-        return;
-      }
 
       // Payment portals: block new signup if the user already has a paid/in-progress registration
       // for this brand that hasn't fully completed yet.
@@ -185,7 +288,7 @@ export default function SelectPlan() {
         return;
       }
 
-      // Check for an existing incomplete record for this user + brand + plan before creating a new one.
+      // Check for an existing incomplete record for this user + brand + primary plan before creating a new one.
       // This prevents duplicate "Pending Registration" rows when a user abandons checkout and returns.
       const { data: existing } = await supabase
         .from('franchisees')
@@ -201,19 +304,30 @@ export default function SelectPlan() {
         .maybeSingle();
 
       const usesExistingCustomerBypass = effectiveCustomerType === 'existing' && brandAllowsExistingCustomers;
+      const includesAnyPaidMedia = selectedPlans.some((plan) => getIncludesPaidMedia(plan));
       const franchiseeStatus = usesExistingCustomerBypass
         ? {
-            include_paid_media: includePaidMedia,
+            include_paid_media: includesAnyPaidMedia,
             service_start_date: '2026-01-01',
             payment_status: 'authorized',
             onboarding_step: 'intake',
+            customer_type: effectiveCustomerType,
           }
-        : {
-            include_paid_media: includePaidMedia,
-            service_start_date: null,
-            payment_status: 'pending',
-            onboarding_step: 'payment',
-          };
+        : requiresPayment
+          ? {
+              include_paid_media: includesAnyPaidMedia,
+              service_start_date: null,
+              payment_status: 'pending',
+              onboarding_step: 'payment',
+              customer_type: effectiveCustomerType,
+            }
+          : {
+              include_paid_media: includesAnyPaidMedia,
+              service_start_date: null,
+              payment_status: null,
+              onboarding_step: 'intake',
+              customer_type: effectiveCustomerType,
+            };
 
       let franchiseeId: string;
 
@@ -221,7 +335,10 @@ export default function SelectPlan() {
         // Reuse the existing stub — update selections in case they changed
         const { error } = await supabase
           .from('franchisees')
-          .update(franchiseeStatus)
+          .update({
+            plan_id: selectedPlan.id,
+            ...franchiseeStatus,
+          })
           .eq('id', existing.id);
         if (error) throw error;
         franchiseeId = existing.id;
@@ -245,10 +362,17 @@ export default function SelectPlan() {
         franchiseeId = franchisee.id;
       }
 
-      // Save for localStorage fallback too
-      savePendingOnboarding(franchiseeId, brandId, selectedPlan.id);
+      await persistFranchiseePlans(franchiseeId);
 
-      if (usesExistingCustomerBypass) {
+      // Save for localStorage fallback too
+      savePendingOnboarding(
+        franchiseeId,
+        brandId,
+        selectedPlan.id,
+        selectedPlans.map((plan) => plan.id),
+      );
+
+      if (usesExistingCustomerBypass || !requiresPayment) {
         navigate(`/onboarding?franchisee_id=${franchiseeId}`);
         return;
       }
@@ -286,7 +410,9 @@ export default function SelectPlan() {
               Select Your Marketing Package
             </h1>
             <p className="text-body text-muted-foreground max-w-xl mx-auto">
-              Choose the plan that best fits your business goals and budget.
+              {isMultiPlanLogicEnabled
+                ? 'Choose one plan from any category that best fits your business goals and budget.'
+                : 'Choose the plan that best fits your business goals and budget.'}
             </p>
             {brandAllowsExistingCustomers && (
               <div className="mt-6 max-w-xl mx-auto rounded-lg border bg-card p-4 shadow-card">
@@ -354,47 +480,67 @@ export default function SelectPlan() {
           {!isLoading && !error && plans && plans.length > 0 && (
             <>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-                {plans.map((plan, index) => (
-                  <div 
-                    key={plan.id}
-                    className="animate-slide-up"
-                    style={{ animationDelay: `${index * 0.1}s` }}
-                  >
-                    <PlanCard
-                      plan={plan}
-                      isSelected={selectedPlanId === plan.id}
-                      includePaidMedia={selectedPlanId === plan.id ? includePaidMedia : false}
-                      onSelect={() => setSelectedPlanId(plan.id)}
-                      onTogglePaidMedia={(checked) => setIncludePaidMedia(checked)}
-                      formatPrice={formatPrice}
-                    />
-                  </div>
-                ))}
+                {plans.map((plan, index) => {
+                  const category = getPlanCategory(plan);
+                  const isSelected = isMultiPlanLogicEnabled
+                    ? selectedPlanIdsByCategory[category] === plan.id
+                    : selectedPlanId === plan.id;
+
+                  return (
+                    <div
+                      key={plan.id}
+                      className="animate-slide-up"
+                      style={{ animationDelay: `${index * 0.1}s` }}
+                    >
+                      <PlanCard
+                        plan={plan}
+                        isSelected={isSelected}
+                        includePaidMedia={isSelected ? getIncludesPaidMedia(plan) : false}
+                        onSelect={() => handlePlanSelect(plan)}
+                        onTogglePaidMedia={(checked) => setIncludesPaidMedia(plan, checked)}
+                        formatPrice={formatPrice}
+                      />
+                    </div>
+                  );
+                })}
               </div>
 
               {/* Bottom Section - Confirmation */}
-              {selectedPlanId && selectedPlan && (
+              {selectedPlans.length > 0 && selectedPlan && (
                 <div className="bg-card border border-border rounded-lg p-4 sm:p-6 md:p-card-padding shadow-card animate-scale-in">
                   {/* Summary */}
-                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+                  <div className="flex flex-col gap-4 mb-6">
                     <div>
-                      <p className="text-label text-muted-foreground mb-1">Selected Package</p>
-                      <p className="text-section-header text-foreground">
-                        {selectedPlan.name}
-                        {includePaidMedia && selectedPlan.supports_paid_media && (
-                          <span className="text-primary"> + Paid Media</span>
-                        )}
+                      <p className="text-label text-muted-foreground mb-3">
+                        {isMultiPlanLogicEnabled ? 'Selected Packages' : 'Selected Package'}
                       </p>
-                    </div>
-                    <div className="sm:text-right">
-                      <p className="text-label text-muted-foreground mb-1">Monthly Investment</p>
-                      <p className="text-card-headline text-foreground">
-                        {includePaidMedia && canSelectPaidMedia(selectedPlan)
-                          ? formatPrice(selectedPlan.monthly_price + (selectedPlan.monthly_price_with_media || 0))
-                          : formatPrice(selectedPlan.monthly_price)
-                        }
-                        <span className="text-body font-normal text-muted-foreground">/mo</span>
-                      </p>
+                      <div className="space-y-3">
+                        {selectedPlans.map((plan) => {
+                          const category = getPlanCategory(plan);
+                          const planIncludesPaidMedia = getIncludesPaidMedia(plan);
+
+                          return (
+                            <div key={plan.id} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 rounded-md border bg-muted/30 p-3">
+                              <div>
+                                <p className="text-sm font-medium text-muted-foreground">{category}</p>
+                                <p className="text-section-header text-foreground">
+                                  {plan.name}
+                                  {planIncludesPaidMedia && plan.supports_paid_media && (
+                                    <span className="text-primary"> + Paid Media</span>
+                                  )}
+                                </p>
+                              </div>
+                              <div className="sm:text-right">
+                                <p className="text-sm text-muted-foreground">Monthly Investment</p>
+                                <p className="text-card-headline text-foreground">
+                                  {formatPrice(getPlanMonthlyInvestment(plan))}
+                                  <span className="text-body font-normal text-muted-foreground">/mo</span>
+                                </p>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
                   </div>
 

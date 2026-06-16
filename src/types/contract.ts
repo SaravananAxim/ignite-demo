@@ -182,8 +182,12 @@ export const COMMON_PLACEHOLDERS = [
 // Section markers for conditional content.
 // Uses {{}} format so they are stored as-is without HTML-escaping angle brackets.
 export const SECTION_MARKERS = {
-  PAID_MEDIA_START: "{{#section:PaidMedia}}",
-  PAID_MEDIA_END: "{{/section:PaidMedia}}",
+  EARNED_MEDIA_START: "{{#section:Earned Media}}",
+  EARNED_MEDIA_END: "{{/section:Earned Media}}",
+  PAID_MEDIA_START: "{{#section:Paid Media}}",
+  PAID_MEDIA_END: "{{/section:Paid Media}}",
+  OTHER_START: "{{#section:Other}}",
+  OTHER_END: "{{/section:Other}}",
   NEW_LOCATION_START: "{{#section:NewLocation}}",
   NEW_LOCATION_END: "{{/section:NewLocation}}",
 } as const;

@@ -348,7 +348,7 @@ export function ContractTemplateEditor({
             <AlertDescription className="text-sm">
               <strong>Placeholders</strong> like <code className="bg-background px-1 rounded">{"{{firstName}}"}</code> are automatically replaced with franchisee data.
               <strong className="ml-2">Signature blocks</strong> use <code className="bg-background px-1 rounded">{"{{franchiseeSignature}}"}</code> and <code className="bg-background px-1 rounded">{"{{counterSignature}}"}</code> — these render as signature images.
-              <strong className="ml-2">Conditional sections</strong> (like Paid Media) only appear when the franchisee selects that option.
+              <strong className="ml-2">Conditional sections</strong> for plan categories render when at least one selected plan belongs to that category, for example <code className="bg-background px-1 rounded">{"{{#section:Earned Media}}...{{/section:Earned Media}}"}</code>.
             </AlertDescription>
           </Alert>
 
@@ -407,6 +407,20 @@ export function ContractTemplateEditor({
               <DropdownMenuContent align="start">
                 <DropdownMenuItem
                   onClick={() => insertSection(
+                    SECTION_MARKERS.EARNED_MEDIA_START,
+                    SECTION_MARKERS.EARNED_MEDIA_END,
+                    "Earned Media"
+                  )}
+                >
+                  <div className="flex flex-col items-start">
+                    <span className="font-medium">Earned Media Section</span>
+                    <span className="text-xs text-muted-foreground">
+                      Only shows when a selected plan is in Earned Media
+                    </span>
+                  </div>
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => insertSection(
                     SECTION_MARKERS.PAID_MEDIA_START,
                     SECTION_MARKERS.PAID_MEDIA_END,
                     "Paid Media"
@@ -415,7 +429,21 @@ export function ContractTemplateEditor({
                   <div className="flex flex-col items-start">
                     <span className="font-medium">Paid Media Section</span>
                     <span className="text-xs text-muted-foreground">
-                      Only shows when paid media is selected
+                      Only shows when a selected plan is in Paid Media
+                    </span>
+                  </div>
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => insertSection(
+                    SECTION_MARKERS.OTHER_START,
+                    SECTION_MARKERS.OTHER_END,
+                    "Other"
+                  )}
+                >
+                  <div className="flex flex-col items-start">
+                    <span className="font-medium">Other Section</span>
+                    <span className="text-xs text-muted-foreground">
+                      Only shows when a selected plan is in Other
                     </span>
                   </div>
                 </DropdownMenuItem>

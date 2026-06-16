@@ -47,6 +47,7 @@ interface Brand {
   primary_color: string | null;
   accent_color: string | null;
   existing_customer_logic: boolean;
+  multi_plan_logic: boolean | null;
   created_at: string;
 }
 
@@ -64,6 +65,7 @@ export default function PortalDetail() {
     primary_color: '#3B82F6',
     accent_color: '#10B981',
     existing_customer_logic: false,
+    multi_plan_logic: false,
   });
 
   // Webhook settings state
@@ -178,6 +180,7 @@ export default function PortalDetail() {
         primary_color: data.primary_color,
         accent_color: data.accent_color,
         existing_customer_logic: data.existing_customer_logic,
+        multi_plan_logic: data.multi_plan_logic,
       }]);
       if (error) throw error;
     },
@@ -202,6 +205,7 @@ export default function PortalDetail() {
         primary_color: data.primary_color,
         accent_color: data.accent_color,
         existing_customer_logic: data.existing_customer_logic,
+        multi_plan_logic: data.multi_plan_logic,
       }).eq('id', brandId);
       if (error) throw error;
     },
@@ -236,7 +240,14 @@ export default function PortalDetail() {
   });
 
   const resetBrandForm = () => {
-    setBrandFormData({ name: '', logo_url: '', primary_color: '#3B82F6', accent_color: '#10B981', existing_customer_logic: false });
+    setBrandFormData({
+      name: '',
+      logo_url: '',
+      primary_color: '#3B82F6',
+      accent_color: '#10B981',
+      existing_customer_logic: false,
+      multi_plan_logic: false,
+    });
     setEditingBrand(null);
     setIsBrandDialogOpen(false);
   };
@@ -250,6 +261,7 @@ export default function PortalDetail() {
       primary_color: brand.primary_color || '#3B82F6',
       accent_color: brand.accent_color || '#10B981',
       existing_customer_logic: brand.existing_customer_logic ?? false,
+      multi_plan_logic: brand.multi_plan_logic === true,
     });
     setIsBrandDialogOpen(true);
   };
@@ -588,6 +600,18 @@ export default function PortalDetail() {
                       id="brand-existing-customer-logic"
                       checked={brandFormData.existing_customer_logic}
                       onCheckedChange={(checked) => setBrandFormData({ ...brandFormData, existing_customer_logic: checked })}
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between p-3 rounded-lg border bg-muted/30">
+                    <div>
+                      <Label htmlFor="brand-multi-plan-logic" className="cursor-pointer">Enable multi-plan selection</Label>
+                      <p className="text-xs text-muted-foreground">When enabled, users can select one plan per category during enrollment.</p>
+                    </div>
+                    <Switch
+                      id="brand-multi-plan-logic"
+                      checked={brandFormData.multi_plan_logic}
+                      onCheckedChange={(checked) => setBrandFormData({ ...brandFormData, multi_plan_logic: checked })}
                     />
                   </div>
                   <Button type="submit" className="w-full" disabled={isBrandPending}>

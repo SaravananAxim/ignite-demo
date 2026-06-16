@@ -7,6 +7,17 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, stripe-signature",
 };
 
+const splitMetadataList = (value?: string | null) =>
+  value ? value.split(",").map((item) => item.trim()).filter(Boolean) : [];
+
+const getPlanMetadataDetails = (metadata?: Stripe.Metadata | null) => ({
+  plan_id: metadata?.plan_id || metadata?.primary_plan_id || null,
+  primary_plan_id: metadata?.primary_plan_id || metadata?.plan_id || null,
+  plan_ids: splitMetadataList(metadata?.plan_ids || metadata?.plan_id),
+  plan_categories: splitMetadataList(metadata?.plan_categories),
+  paid_media_price_scope: metadata?.paid_media_price_scope || null,
+});
+
 const emitSignupEventOnce = async ({
   supabase,
   franchiseeId,
@@ -104,6 +115,7 @@ serve(async (req) => {
         console.log("Checkout session completed:", session.id);
 
         const franchiseeId = session.metadata?.franchisee_id;
+        const planMetadataDetails = getPlanMetadataDetails(session.metadata);
         if (franchiseeId) {
           const customerName = session.customer_details?.name;
 
@@ -170,6 +182,7 @@ serve(async (req) => {
               session_id: session.id,
               subscription_id: session.subscription,
               amount_total: session.amount_total,
+              ...planMetadataDetails,
             },
           });
         }

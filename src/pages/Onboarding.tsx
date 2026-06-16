@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -17,6 +17,16 @@ import { Loader2, ArrowRight, ArrowLeft, Building2, User, MapPin, Briefcase } fr
 import { toast } from '@/hooks/use-toast';
 import { z } from "zod";
 import { INITIAL_INTAKE_DATA, type IntakeFormData } from "@/types/franchisee";
+
+
+type OnboardingSelectedPlan = {
+  category: string;
+  plans: {
+    category: string | null;
+  } | null;
+};
+
+const DEFAULT_PLAN_CATEGORY = "Other";
 
 // Form validation schema
 const createIntakeSchema = (requiresPaidMediaBudget: boolean) => z.object({
@@ -126,12 +136,40 @@ export default function Onboarding() {
     enabled: !!effectivePlanId,
   });
 
+  const { data: selectedPlanRows = [], isLoading: selectedPlanCategoriesLoading } = useQuery({
+    queryKey: ["franchisee-selected-plan-categories", franchiseeId],
+    queryFn: async () => {
+      if (!franchiseeId) return [];
+
+      const { data, error } = await supabase
+        .from("franchisee_plans")
+        .select("category, plans(category)")
+        .eq("franchisee_id", franchiseeId);
+
+      if (error) throw error;
+      return (data || []) as OnboardingSelectedPlan[];
+    },
+    enabled: !!franchiseeId,
+  });
+
+  const selectedCategorySet = useMemo(() => {
+    const categories = selectedPlanRows.map(
+      (selection) => selection.category || selection.plans?.category || DEFAULT_PLAN_CATEGORY,
+    );
+
+    if (categories.length === 0 && plan?.category) {
+      categories.push(plan.category);
+    }
+
+    return new Set(categories);
+  }, [plan?.category, selectedPlanRows]);
+
   const paidMediaParam = searchParams.get("paid_media") === "true";
   const requiresPaidMediaBudget =
     existingFranchisee?.include_paid_media === true ||
     paidMediaParam ||
     plan?.requires_paid_media === true ||
-    plan?.category === "Paid Media";
+    selectedCategorySet.has("Paid Media");
   const effectiveIncludePaidMedia = requiresPaidMediaBudget;
 
   // Fetch brand details
@@ -446,7 +484,7 @@ export default function Onboarding() {
     }
   };
 
-  const isLoading = planLoading || franchiseeLoading;
+  const isLoading = planLoading || franchiseeLoading || selectedPlanCategoriesLoading;
 
   if (isLoading) {
     return (

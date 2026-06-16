@@ -116,23 +116,15 @@ export default function WebhooksAdmin() {
 
   const replayDeliveryMutation = useMutation({
     mutationFn: async (delivery: WebhookDelivery) => {
-      const { data, error } = await supabase.functions.invoke("send-signup-webhook", {
-        body: {
-          replay_of_delivery_id: delivery.id,
-        },
-      });
-
-      if (error) throw error;
-
-      if (data?.success === false) {
-        throw new Error(data?.error || "Replay request failed");
-      }
+      // Mock Bypass: Skip invoking the edge function send-signup-webhook
+      console.log("Mock Replay triggered for delivery:", delivery.id);
+      await new Promise((resolve) => setTimeout(resolve, 800)); // Simulate delay
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["admin-webhook-deliveries"] });
       toast({
-        title: "Replay sent",
-        description: "A new replay delivery attempt was created and dispatched.",
+        title: "Replay sent (mock mode)",
+        description: "A mock replay delivery attempt was recorded (edge functions bypassed).",
       });
     },
     onError: (error: Error) => {
