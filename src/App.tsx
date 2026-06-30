@@ -26,7 +26,7 @@ const queryClient = new QueryClient({
  * Set this to test specific portals in development (e.g., "test")
  * In production, subdomain is extracted from URL automatically
  */
-const DEV_SUBDOMAIN = import.meta.env.DEV ? undefined : undefined;
+const DEV_SUBDOMAIN = 'aximsoft' //import.meta.env.DEV ? undefined : undefined;
 
 /**
  * Main Application Component

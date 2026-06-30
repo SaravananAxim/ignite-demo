@@ -7,23 +7,22 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp';
 import { toast } from '@/hooks/use-toast';
 import { z } from 'zod';
-import { Mail, ArrowRight, Loader2, WifiOff } from 'lucide-react';
+import { Mail, ArrowRight, Loader2, WifiOff, Lock } from 'lucide-react';
 import igniteLogo from '@/assets/ignite-logo.webp';
 
-const emailSchema = z.object({
+const authSchema = z.object({
   email: z.string().email('Please enter a valid email address'),
+  password: z.string().min(1, 'Please enter your password'),
 });
 
 export default function Auth() {
   const [email, setEmail] = useState('');
-  const [code, setCode] = useState('');
-  const [codeSent, setCodeSent] = useState(false);
+  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const { signInWithOtp, verifyOtp, user, role } = useUser();
+  const { signIn, resetPassword, user, role } = useUser();
   const navigate = useNavigate();
   const { isOnline } = useNetworkStatus();
   const { portal } = usePortal();
@@ -52,14 +51,14 @@ export default function Auth() {
     }
   }, [user, role, navigate, portal]);
 
-  const handleSendCode = async (e: React.FormEvent) => {
+  const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!isOnline) {
       toast.error('You are offline. Please check your connection and try again.');
       return;
     }
 
-    const validation = emailSchema.safeParse({ email });
+    const validation = authSchema.safeParse({ email, password });
     if (!validation.success) {
       toast.error(validation.error.errors[0].message);
       return;
@@ -67,19 +66,14 @@ export default function Auth() {
 
     setLoading(true);
     try {
-      const { error } = await signInWithOtp(email, { shouldCreateUser: false });
+      const { error } = await signIn(email, password);
 
       if (error) {
-        if (error.message.includes('Signups not allowed') || error.message.includes('signups_disabled')) {
-          toast.error('No account found for this email. Admin access is by invitation only.');
-        } else {
-          toast.error(error.message);
-        }
+        toast.error(error.message || 'Unable to sign in. Please check your credentials and try again.');
         return;
       }
 
-      setCodeSent(true);
-      setCode('');
+      toast.success('Signed in.');
     } catch (err) {
       toast.error('An unexpected error occurred. Please try again.');
     } finally {
@@ -87,86 +81,33 @@ export default function Auth() {
     }
   };
 
-  const handleVerifyCode = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const trimmed = code.replace(/\s/g, '');
-    if (trimmed.length !== 8) {
-      toast.error('Please enter the 8-digit code from your email.');
+  const handleForgotPassword = async () => {
+    if (!isOnline) {
+      toast.error('You are offline. Please check your connection and try again.');
+      return;
+    }
+
+    const emailValidation = z.object({ email: z.string().email('Please enter a valid email address') }).safeParse({ email });
+    if (!emailValidation.success) {
+      toast.error(emailValidation.error.errors[0].message);
       return;
     }
 
     setLoading(true);
     try {
-      const { error } = await verifyOtp(email, trimmed);
-
+      const { error } = await resetPassword(email);
       if (error) {
-        toast.error(error.message || 'Invalid or expired code. Request a new one.');
+        toast.error(error.message || 'Could not send password reset email.');
         return;
       }
-      toast.success('Signed in.');
+
+      toast.success('Password reset email sent. Check your inbox.');
     } catch {
       toast.error('Something went wrong. Please try again.');
     } finally {
       setLoading(false);
     }
   };
-
-  if (codeSent) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background p-6">
-        <Card className="w-full max-w-md shadow-elevated animate-scale-in border border-border rounded-lg">
-          <CardHeader className="text-center space-y-4 p-card-padding pb-0">
-            <div className="mx-auto">
-              <img src={igniteLogo} alt="Ignite" className="h-16 w-auto" />
-            </div>
-            <div>
-              <CardTitle className="text-page-title text-foreground">Enter verification code</CardTitle>
-              <CardDescription className="text-body text-muted-foreground mt-2">
-                We sent an 8-digit code to <strong className="text-foreground">{email}</strong>. Enter it below.
-              </CardDescription>
-            </div>
-          </CardHeader>
-          <CardContent className="p-card-padding">
-            <form onSubmit={handleVerifyCode} className="space-y-4">
-              <div className="flex justify-center">
-                <InputOTP
-                  maxLength={8}
-                  value={code}
-                  onChange={setCode}
-                  disabled={loading}
-                >
-                  <InputOTPGroup className="gap-1">
-                    {Array.from({ length: 8 }).map((_, i) => (
-                      <InputOTPSlot key={i} index={i} />
-                    ))}
-                  </InputOTPGroup>
-                </InputOTP>
-              </div>
-              <Button
-                type="submit"
-                className="w-full"
-                disabled={loading || code.replace(/\s/g, '').length !== 8}
-              >
-                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Verify & continue'}
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                className="w-full"
-                onClick={() => {
-                  setCodeSent(false);
-                  setCode('');
-                }}
-                disabled={loading}
-              >
-                Back
-              </Button>
-            </form>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-6">
@@ -178,7 +119,7 @@ export default function Auth() {
           <div>
             <CardTitle className="text-page-title text-foreground">Admin sign in</CardTitle>
             <CardDescription className="text-body text-muted-foreground mt-2">
-              Sign in to access the admin portal with a verification code
+              Sign in to access the admin portal with your email and password
             </CardDescription>
             <p className="text-xs text-muted-foreground mt-2">
               Franchisees: Use your brand&apos;s signup portal to access your account.
@@ -186,7 +127,7 @@ export default function Auth() {
           </div>
         </CardHeader>
 
-        <form onSubmit={handleSendCode}>
+        <form onSubmit={handleSignIn}>
           <CardContent className="space-y-5 p-card-padding">
             <div className="space-y-2">
               <Label htmlFor="email" className="text-body-medium text-foreground">Email</Label>
@@ -200,6 +141,22 @@ export default function Auth() {
                   onChange={(e) => setEmail(e.target.value)}
                   className="pl-10 h-11 rounded-md border-border"
                   required
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="password" className="text-body-medium text-foreground">Password</Label>
+              <div className="relative">
+                <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <Input
+                  id="password"
+                  type="password"
+                  placeholder="Enter your password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="pl-10 h-11 rounded-md border-border"
+                  required
+                  autoComplete="current-password"
                 />
               </div>
             </div>
@@ -225,6 +182,15 @@ export default function Auth() {
                   <ArrowRight className="w-4 h-4" />
                 </>
               )}
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              className="w-full"
+              onClick={handleForgotPassword}
+              disabled={loading || !isOnline}
+            >
+              Forgot password?
             </Button>
           </CardFooter>
         </form>
