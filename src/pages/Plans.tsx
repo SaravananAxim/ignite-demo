@@ -102,14 +102,31 @@ export default function Plans() {
     },
   });
 
+  // Create Stripe product and price via edge function
   const createStripeProduct = async (planData: typeof formData) => {
-    // Mock Stripe IDs generation locally since edge functions are not available
-    const randomSuffix = Math.random().toString(36).substring(2, 11);
-    return {
-      productId: `prod_mock_${randomSuffix}`,
-      priceId: `price_mock_${randomSuffix}`,
-      priceIdWithMedia: planData.supports_paid_media ? `price_mock_media_${randomSuffix}` : null,
-    };
+    // Get brand and portal names for Stripe product naming
+    const selectedBrand = brands?.find(b => b.id === planData.brand_id);
+    const brandName = selectedBrand?.name || 'Unknown Brand';
+    const portalName = selectedBrand?.portals?.name || 'Unknown Portal';
+
+    const { data, error } = await supabase.functions.invoke('create-stripe-product', {
+      body: {
+        planName: planData.name,
+        brandName,
+        portalName,
+        description: decodeHtmlEntities(planData.description.replace(/<[^>]*>/g, '')).substring(0, 500), // Strip HTML, decode entities for Stripe
+        monthlyPrice: parseFloat(planData.monthly_price),
+        monthlyPriceWithMedia: planData.supports_paid_media && planData.monthly_price_with_media 
+          ? parseFloat(planData.monthly_price_with_media) 
+          : undefined,
+        supportsPaidMedia: planData.supports_paid_media,
+      },
+    });
+
+    if (error) throw new Error(error.message);
+    if (data?.error) throw new Error(data.error);
+    
+    return data as { productId: string; priceId: string; priceIdWithMedia: string | null };
   };
 
   const createMutation = useMutation({
@@ -166,8 +183,20 @@ export default function Plans() {
   const updateMutation = useMutation({
     mutationFn: async ({ id, data, originalPlan }: { id: string; data: typeof formData; originalPlan: Plan | null }) => {
       if (originalPlan?.stripe_price_id) {
-        // Stripe integration bypassed/mocked: Skip invoking update-stripe-product edge function
-        console.log('Stripe update skipped (edge functions bypassed)');
+        // Always sync name/description to Stripe on save (decoded so no &amp; / &nbsp; in Stripe)
+        const selectedBrand = brands?.find(b => b.id === data.brand_id);
+        const brandName = selectedBrand?.name || 'Unknown Brand';
+        const portalName = selectedBrand?.portals?.name || 'Unknown Portal';
+        const fullProductName = `${portalName} | ${brandName} | ${data.name}`;
+        const { data: updateResult, error: stripeError } = await supabase.functions.invoke('update-stripe-product', {
+          body: {
+            stripePriceId: originalPlan.stripe_price_id,
+            fullProductName,
+            description: decodeHtmlEntities(data.description.replace(/<[^>]*>/g, '')).substring(0, 500),
+          },
+        });
+        if (stripeError) throw new Error(stripeError.message);
+        if (updateResult?.error) throw new Error(updateResult.error);
       }
       const { data: updated, error } = await supabase.from('plans').update({
         brand_id: data.brand_id,

@@ -169,24 +169,12 @@ export function UserProvider({ children }: UserProviderProps) {
   };
 
   const verifyOtp = async (email: string, token: string) => {
-    // Try verifying as login OTP (type: 'email') first
-    const { data, error } = await supabase.auth.verifyOtp({
+    const { error } = await supabase.auth.verifyOtp({
       email,
       token,
       type: 'email',
     });
-
-    if (error) {
-      // If login OTP fails, try verifying as signup OTP (type: 'signup')
-      const signupResult = await supabase.auth.verifyOtp({
-        email,
-        token,
-        type: 'signup',
-      });
-      return { error: signupResult.error as Error | null };
-    }
-
-    return { error: null };
+    return { error: error as Error | null };
   };
 
   const signOut = async () => {

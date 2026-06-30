@@ -38,6 +38,7 @@ export default function PaymentProcessing() {
   const success = searchParams.get("success");
   const canceled = searchParams.get("canceled");
   const customerType = searchParams.get("customer_type") === "existing" ? "existing" : "new";
+  const selectionVersion = searchParams.get("selection_version");
   
   const [isCreatingCheckout, setIsCreatingCheckout] = useState(false);
   const [checkoutUrl, setCheckoutUrl] = useState<string | null>(null);
@@ -46,7 +47,7 @@ export default function PaymentProcessing() {
 
   // Fetch franchisee details (include portal for effective-date settings)
   const { data: franchisee, isLoading } = useQuery({
-    queryKey: ["franchisee-payment", franchiseeId],
+    queryKey: ["franchisee-payment", franchiseeId, selectionVersion],
     queryFn: async () => {
       if (!franchiseeId) return null;
       const { data, error } = await supabase
@@ -58,6 +59,7 @@ export default function PaymentProcessing() {
       return data;
     },
     enabled: !!franchiseeId,
+    refetchOnMount: "always",
   });
 
   const isMultiPlanLogicEnabled = franchisee?.brands?.multi_plan_logic === true;
@@ -66,7 +68,7 @@ export default function PaymentProcessing() {
   // selected plans server-side by franchiseeId for integrity; this query is for
   // displaying an accurate client-side summary and resume metadata.
   const { data: persistedSelectedPlans = EMPTY_SELECTED_PLANS, isLoading: selectedPlansLoading } = useQuery({
-    queryKey: ["franchisee-selected-plans", franchiseeId],
+    queryKey: ["franchisee-selected-plans", franchiseeId, selectionVersion],
     queryFn: async () => {
       if (!franchiseeId) return [];
 
@@ -88,6 +90,7 @@ export default function PaymentProcessing() {
         }));
     },
     enabled: !!franchiseeId && isMultiPlanLogicEnabled,
+    refetchOnMount: "always",
   });
 
   const selectedPlans = useMemo<SelectedPaymentPlan[]>(() => {
@@ -179,29 +182,38 @@ export default function PaymentProcessing() {
     setIsCreatingCheckout(true);
 
     try {
-      // Mock Bypass: Directly update the franchisee's payment and onboarding steps in the database
-      const { error: updateError } = await supabase
-        .from("franchisees")
-        .update({
-          payment_status: "authorized",
-          status: "active",
-          service_start_date: effectiveDate.toISOString().split("T")[0],
-          onboarding_step: "intake",
-        })
-        .eq("id", franchisee.id);
+      // Call the edge function to create checkout session
+      const { data, error } = await supabase.functions.invoke("create-checkout", {
+        body: {
+          franchiseeId: franchisee.id,
+          effectiveDate: effectiveDate.toISOString(),
+          selectedPlanIds,
+           // Let the backend function decide the success URL (it includes CHECKOUT_SESSION_ID)
+           // and routes the user through /payment-confirmation to wait for webhook confirmation.
+           cancelUrl: `${window.location.origin}/payment-processing?franchisee_id=${franchisee.id}&canceled=true`,
+        },
+      });
 
-      if (updateError) throw updateError;
-
-      // Save franchisee ID for resume capability
-      savePendingOnboarding(franchisee.id, franchisee.brand_id, franchisee.plan_id, selectedPlanIds);
-
-      toast.success("Payment setup completed successfully (mock mode)");
+      if (error) throw error;
       
-      // Redirect to confirmation screen
-      navigate(`/confirmation?franchisee_id=${franchisee.id}`);
+      // Check for error in response body (edge function returns { error: "message" } on failure)
+      if (data?.error) {
+        throw new Error(data.error);
+      }
+
+      if (data?.url) {
+        // Save franchisee ID for resume capability
+        savePendingOnboarding(franchisee.id, franchisee.brand_id, franchisee.plan_id, selectedPlanIds);
+        
+        setCheckoutUrl(data.url);
+        // Redirect to Stripe Checkout
+        window.location.href = data.url;
+      } else {
+        throw new Error("No checkout URL returned");
+      }
     } catch (error: unknown) {
-      console.error("Error bypassing checkout:", error);
-      const message = error instanceof Error ? error.message : "Failed to complete setup";
+      console.error("Error creating checkout:", error);
+      const message = error instanceof Error ? error.message : "Failed to create checkout session";
       toast.error(message);
     } finally {
       setIsCreatingCheckout(false);
@@ -212,6 +224,8 @@ export default function PaymentProcessing() {
     // Go back to plan selection
     if (franchisee?.brand_id) {
       const params = new URLSearchParams({ brand_id: franchisee.brand_id });
+      const portalParam = searchParams.get('portal');
+      if (portalParam) params.set('portal', portalParam);
       if (customerType === 'existing') params.set('customer_type', customerType);
       navigate(`/select-plan?${params.toString()}`);
     } else {

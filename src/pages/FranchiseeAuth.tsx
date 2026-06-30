@@ -3,18 +3,19 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useUser } from '@/contexts/UserContext';
 import { useNetworkStatus } from '@/hooks/useNetworkStatus';
 import { usePortal } from '@/contexts/PortalContext';
+import { PORTAL } from '@/constants';
 import { PortalLayout } from '@/components/layout/PortalLayout';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import { InputOTP, InputOTPGroup, InputOTPSlot } from '@/components/ui/input-otp';
 import { toast } from '@/hooks/use-toast';
 import { z } from 'zod';
-import { Mail, ArrowRight, Loader2, WifiOff, User, Lock } from 'lucide-react';
+import { Mail, ArrowRight, Loader2, WifiOff, User } from 'lucide-react';
 
 const authSchema = z.object({
   email: z.string().email('Please enter a valid email address'),
-  password: z.string().min(6, 'Password must be at least 6 characters'),
 });
 
 const signupSchema = authSchema.extend({
@@ -24,11 +25,12 @@ const signupSchema = authSchema.extend({
 export default function FranchiseeAuth() {
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
   const [loading, setLoading] = useState(false);
+  const [codeSent, setCodeSent] = useState(false);
+  const [code, setCode] = useState('');
 
-  const { signIn, signUp, resetPassword, user } = useUser();
+  const { signInWithOtp, signUp, verifyOtp, user } = useUser();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { isOnline } = useNetworkStatus();
@@ -41,7 +43,7 @@ export default function FranchiseeAuth() {
   const customerType = searchParams.get('customer_type');
   const returnTo = searchParams.get('return_to') || '/select-brand';
 
-  // Redirect if already logged in
+  // Redirect if already logged in (unless this is a password reset link)
   useEffect(() => {
     const hash = window.location.hash;
     if (hash && hash.includes('type=recovery')) {
@@ -65,6 +67,22 @@ export default function FranchiseeAuth() {
     }
   }, [user, navigate, planId, brandId, paidMedia, customerType, returnTo]);
 
+  const getEmailRedirectTo = (): string => {
+    const isPortalSubdomain =
+      typeof window !== 'undefined' &&
+      window.location.hostname.toLowerCase().endsWith('.' + PORTAL.BASE_DOMAIN.toLowerCase());
+    const redirectOrigin = isPortalSubdomain ? `https://${PORTAL.BASE_DOMAIN}` : window.location.origin;
+    const params = new URLSearchParams();
+    if (planId) params.set('plan_id', planId);
+    if (brandId) params.set('brand_id', brandId);
+    if (paidMedia) params.set('paid_media', paidMedia);
+    if (customerType) params.set('customer_type', customerType);
+    if (returnTo && returnTo !== '/select-brand') params.set('return_to', returnTo);
+    if (portal?.subdomain) params.set('portal', portal.subdomain);
+    const query = params.toString();
+    return query ? `${redirectOrigin}/franchisee-auth?${query}` : `${redirectOrigin}/franchisee-auth`;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -74,13 +92,13 @@ export default function FranchiseeAuth() {
     }
 
     if (isLogin) {
-      const validation = authSchema.safeParse({ email, password });
+      const validation = authSchema.safeParse({ email });
       if (!validation.success) {
         toast.error(validation.error.errors[0].message);
         return;
       }
     } else {
-      const validation = signupSchema.safeParse({ email, fullName, password });
+      const validation = signupSchema.safeParse({ email, fullName });
       if (!validation.success) {
         toast.error(validation.error.errors[0].message);
         return;
@@ -90,25 +108,56 @@ export default function FranchiseeAuth() {
     setLoading(true);
 
     try {
+      // Omit emailRedirectTo so Supabase uses Site URL (avoids 422 if custom URL isn't in allow list). User signs in by entering the code.
       if (isLogin) {
-        const { error } = await signIn(email, password);
+        const { error } = await signInWithOtp(email, {
+          shouldCreateUser: false,
+        });
         if (error) {
-          toast.error(error.message || 'Invalid email or password. Please try again.');
-        } else {
-          toast.success('Signed in.');
-        }
-      } else {
-        const { error } = await signUp(email, password, { full_name: fullName });
-        if (error) {
-          if (error.message.includes('already registered') || error.message.includes('already exists')) {
-            toast.error('An account with this email already exists. Use sign in.');
-            setIsLogin(true);
+          if (error.message.includes('Signups not allowed') || error.message.includes('signups_disabled')) {
+            toast.error('No account found for this email. Sign up to create an account.');
+            setIsLogin(false);
           } else {
             toast.error(error.message);
           }
         } else {
-          toast.success('Registration successful. Please check your email to confirm your account.');
-          setIsLogin(true);
+          setCodeSent(true);
+        }
+      } else {
+        let { error } = await signInWithOtp(email, {
+          data: { full_name: fullName },
+          shouldCreateUser: true,
+        });
+        // Fallback: if project disables OTP signup, create user with signUp then send OTP
+        const otpSignupDisabled =
+          error?.message?.includes('Signups not allowed for otp') ||
+          (error as { code?: string })?.code === 'otp_disabled';
+        if (error && otpSignupDisabled) {
+          const tempPassword = `${Math.random().toString(36).slice(-10)}A1a!`;
+          const { error: signUpError } = await signUp(email, tempPassword, { full_name: fullName });
+          if (signUpError) {
+            if (signUpError.message.includes('already registered') || signUpError.message.includes('already exists')) {
+              toast.error('An account with this email already exists. Use sign in to get a code.');
+              setIsLogin(true);
+            } else {
+              toast.error(signUpError.message);
+            }
+            setLoading(false);
+            return;
+          }
+          error = (await signInWithOtp(email, { shouldCreateUser: false })).error;
+        }
+        if (error && !otpSignupDisabled) {
+          if (error.message.includes('already registered') || error.message.includes('already exists')) {
+            toast.error('An account with this email already exists. Use sign in to get a code.');
+            setIsLogin(true);
+          } else {
+            toast.error(error.message);
+          }
+        } else if (!error) {
+          setCodeSent(true);
+        } else {
+          toast.error(error?.message ?? 'Could not send code. Try again.');
         }
       }
     } catch (err) {
@@ -118,33 +167,90 @@ export default function FranchiseeAuth() {
     }
   };
 
-  const handleForgotPassword = async () => {
-    if (!isOnline) {
-      toast.error('You are offline. Please check your connection and try again.');
+  const handleVerifyCode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const trimmed = code.replace(/\s/g, '');
+    if (trimmed.length !== 8) {
+      toast.error('Please enter the 8-digit code from your email.');
       return;
     }
-
-    const emailValidation = z.object({ email: z.string().email('Please enter a valid email address') }).safeParse({ email });
-    if (!emailValidation.success) {
-      toast.error(emailValidation.error.errors[0].message);
-      return;
-    }
-
     setLoading(true);
     try {
-      const { error } = await resetPassword(email);
+      const { error } = await verifyOtp(email, trimmed);
       if (error) {
-        toast.error(error.message || 'Could not send password reset email.');
+        toast.error(error.message || 'Invalid or expired code. Request a new one.');
         return;
       }
-
-      toast.success('Password reset email sent. Check your inbox.');
+      // Success: onAuthStateChange will set user and useEffect will redirect
     } catch {
       toast.error('Something went wrong. Please try again.');
     } finally {
       setLoading(false);
     }
   };
+
+  if (codeSent) {
+    return (
+      <PortalLayout
+        showBackButton={false}
+        infoBannerText="Sign in or create an account to access the franchise registration portal."
+      >
+        <div className="flex items-center justify-center py-8">
+          <Card className="w-full max-w-md shadow-elevated animate-scale-in border border-border rounded-lg">
+            <CardHeader className="text-center space-y-4 p-card-padding pb-0">
+              <div>
+                <CardTitle className="text-page-title text-foreground">Enter verification code</CardTitle>
+                <CardDescription className="text-body text-muted-foreground mt-2">
+                  We sent an 8-digit code to <strong className="text-foreground">{email}</strong>. Enter it below.
+                </CardDescription>
+              </div>
+            </CardHeader>
+            <CardContent className="p-card-padding">
+              <form onSubmit={handleVerifyCode} className="space-y-4">
+                <div className="flex justify-center">
+                  <InputOTP
+                    maxLength={8}
+                    value={code}
+                    onChange={setCode}
+                    disabled={loading}
+                  >
+                    <InputOTPGroup className="gap-1">
+                      {Array.from({ length: 8 }).map((_, i) => (
+                        <InputOTPSlot key={i} index={i} />
+                      ))}
+                    </InputOTPGroup>
+                  </InputOTP>
+                </div>
+                <Button
+                  type="submit"
+                  className="w-full"
+                  disabled={loading || code.replace(/\s/g, '').length !== 8}
+                >
+                  {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Verify & continue'}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => {
+                    setCodeSent(false);
+                    setCode('');
+                    setIsLogin(true);
+                  }}
+                  disabled={loading}
+                >
+                  Back to Sign in
+                </Button>
+                <p className="text-xs text-center text-muted-foreground">
+                  Didn&apos;t get the code? Check spam or request a new one below.
+                </p>
+              </form>
+            </CardContent>
+          </Card>
+        </div>
+      </PortalLayout>
+    );
+  }
 
   return (
     <PortalLayout
@@ -202,22 +308,6 @@ export default function FranchiseeAuth() {
                   />
                 </div>
               </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="password" className="text-body-medium text-foreground">Password</Label>
-                <div className="relative">
-                  <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                  <Input
-                    id="password"
-                    type="password"
-                    placeholder="••••••••"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className="pl-10 h-11 rounded-md border-border"
-                    required
-                  />
-                </div>
-              </div>
             </CardContent>
             
             <CardFooter className="flex flex-col gap-4 p-card-padding pt-0">
@@ -242,25 +332,13 @@ export default function FranchiseeAuth() {
                 )}
               </Button>
               
-              <div className="flex flex-col gap-2 w-full text-center">
-                <button
-                  type="button"
-                  onClick={() => setIsLogin(!isLogin)}
-                  className="text-sm text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  {isLogin ? "Don't have an account? Sign up" : 'Already have an account? Sign in'}
-                </button>
-                {isLogin && (
-                  <button
-                    type="button"
-                    onClick={handleForgotPassword}
-                    className="text-sm text-muted-foreground hover:text-foreground transition-colors"
-                    disabled={loading || !isOnline}
-                  >
-                    Forgot password?
-                  </button>
-                )}
-              </div>
+              <button
+                type="button"
+                onClick={() => setIsLogin(!isLogin)}
+                className="text-body text-muted-foreground hover:text-foreground transition-colors"
+              >
+                {isLogin ? "Don't have an account? Sign up" : 'Already have an account? Sign in'}
+              </button>
             </CardFooter>
           </form>
         </Card>

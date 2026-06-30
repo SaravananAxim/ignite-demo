@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { usePortal } from '@/contexts/PortalContext';
 import { useUser } from '@/contexts/UserContext';
@@ -35,10 +35,16 @@ type SelectablePlan = {
 
 const getPlanCategory = (plan: SelectablePlan) => plan.category || DEFAULT_PLAN_CATEGORY;
 
+type PlanCategoryGroup = {
+  category: string;
+  plans: SelectablePlan[];
+};
+
 export default function SelectPlan() {
   const { portal } = usePortal();
   const { user } = useUser();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [searchParams] = useSearchParams();
   const brandId = searchParams.get('brand_id');
   const portalParam = searchParams.get('portal');
@@ -105,6 +111,23 @@ export default function SelectPlan() {
 
   const isMultiPlanLogicEnabled = brand?.multi_plan_logic === true;
 
+  const planGroups = useMemo<PlanCategoryGroup[]>(() => {
+    if (!plans) return [];
+
+    return plans.reduce<PlanCategoryGroup[]>((groups, plan) => {
+      const category = getPlanCategory(plan);
+      const existingGroup = groups.find((group) => group.category === category);
+
+      if (existingGroup) {
+        existingGroup.plans.push(plan);
+      } else {
+        groups.push({ category, plans: [plan] });
+      }
+
+      return groups;
+    }, []);
+  }, [plans]);
+
   const selectedPlans = useMemo(() => {
     if (!plans) return [];
 
@@ -113,9 +136,10 @@ export default function SelectPlan() {
       return plan ? [plan] : [];
     }
 
-    const selectedIds = new Set(Object.values(selectedPlanIdsByCategory));
-    return plans.filter((plan) => selectedIds.has(plan.id));
-  }, [isMultiPlanLogicEnabled, plans, selectedPlanId, selectedPlanIdsByCategory]);
+    return planGroups
+      .map((group) => plans.find((plan) => plan.id === selectedPlanIdsByCategory[group.category]))
+      .filter((plan): plan is SelectablePlan => Boolean(plan));
+  }, [isMultiPlanLogicEnabled, planGroups, plans, selectedPlanId, selectedPlanIdsByCategory]);
 
   const selectedPlan = selectedPlans[0] ?? null;
 
@@ -209,7 +233,17 @@ export default function SelectPlan() {
     }
 
     const category = getPlanCategory(plan);
-    setSelectedPlanIdsByCategory((current) => ({ ...current, [category]: plan.id }));
+    setSelectedPlanIdsByCategory((current) => {
+      const next = { ...current };
+
+      if (next[category] === plan.id) {
+        delete next[category];
+        return next;
+      }
+
+      next[category] = plan.id;
+      return next;
+    });
   };
 
   const persistFranchiseePlans = async (franchiseeId: string) => {
@@ -288,14 +322,15 @@ export default function SelectPlan() {
         return;
       }
 
-      // Check for an existing incomplete record for this user + brand + primary plan before creating a new one.
-      // This prevents duplicate "Pending Registration" rows when a user abandons checkout and returns.
+      // Check for an existing editable incomplete record for this user + brand before creating a new one.
+      // Do not filter by plan_id: users may go back from payment processing, change their plan,
+      // and then continue with the same pending franchisee registration. Reusing that record keeps
+      // /payment-processing?franchisee_id=... pointed at the current selections instead of an older stub.
       const { data: existing } = await supabase
         .from('franchisees')
         .select('id')
         .eq('user_id', user.id)
         .eq('brand_id', brandId)
-        .eq('plan_id', selectedPlan.id)
         .eq('status', 'pending')
         .eq('name', 'Pending Registration')
         .in('payment_status', ['pending', 'pending_checkout'])
@@ -372,13 +407,21 @@ export default function SelectPlan() {
         selectedPlans.map((plan) => plan.id),
       );
 
+      await queryClient.invalidateQueries({ queryKey: ['franchisee-payment', franchiseeId] });
+      await queryClient.invalidateQueries({ queryKey: ['franchisee-selected-plans', franchiseeId] });
+
       if (usesExistingCustomerBypass || !requiresPayment) {
         navigate(`/onboarding?franchisee_id=${franchiseeId}`);
         return;
       }
 
-      // Navigate to payment processing with the franchisee ID
-      navigate(`/payment-processing?franchisee_id=${franchiseeId}`);
+      // Navigate to payment processing with a cache-busting selection version so returning
+      // and changing plans cannot render stale React Query data for the same franchisee.
+      const paymentParams = new URLSearchParams({
+        franchisee_id: franchiseeId,
+        selection_version: Date.now().toString(),
+      });
+      navigate(`/payment-processing?${paymentParams.toString()}`);
     } catch (error: unknown) {
       console.error('Error creating franchisee:', error);
       toast.error('Failed to proceed. Please try again.');
@@ -411,7 +454,7 @@ export default function SelectPlan() {
             </h1>
             <p className="text-body text-muted-foreground max-w-xl mx-auto">
               {isMultiPlanLogicEnabled
-                ? 'Choose one plan from any category that best fits your business goals and budget.'
+                ? 'Choose up to one plan from each category, with at least one plan selected overall.'
                 : 'Choose the plan that best fits your business goals and budget.'}
             </p>
             {brandAllowsExistingCustomers && (
@@ -479,31 +522,66 @@ export default function SelectPlan() {
           {/* Plans Grid */}
           {!isLoading && !error && plans && plans.length > 0 && (
             <>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-                {plans.map((plan, index) => {
-                  const category = getPlanCategory(plan);
-                  const isSelected = isMultiPlanLogicEnabled
-                    ? selectedPlanIdsByCategory[category] === plan.id
-                    : selectedPlanId === plan.id;
+              {isMultiPlanLogicEnabled ? (
+                <div className="space-y-10 mb-8">
+                  {planGroups.map((group, groupIndex) => (
+                    <section key={group.category} className="space-y-4">
+                      <div className="flex flex-col gap-1 border-b border-border pb-3">
+                        <p className="text-label text-primary uppercase">Category {groupIndex + 1}</p>
+                        <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2">
+                          <h2 className="text-section-header text-foreground">{group.category}</h2>
+                          <p className="text-sm text-muted-foreground">Select up to one plan from this category</p>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        {group.plans.map((plan, planIndex) => {
+                          const isSelected = selectedPlanIdsByCategory[group.category] === plan.id;
 
-                  return (
-                    <div
-                      key={plan.id}
-                      className="animate-slide-up"
-                      style={{ animationDelay: `${index * 0.1}s` }}
-                    >
-                      <PlanCard
-                        plan={plan}
-                        isSelected={isSelected}
-                        includePaidMedia={isSelected ? getIncludesPaidMedia(plan) : false}
-                        onSelect={() => handlePlanSelect(plan)}
-                        onTogglePaidMedia={(checked) => setIncludesPaidMedia(plan, checked)}
-                        formatPrice={formatPrice}
-                      />
-                    </div>
-                  );
-                })}
-              </div>
+                          return (
+                            <div
+                              key={plan.id}
+                              className="animate-slide-up"
+                              style={{ animationDelay: `${(groupIndex + planIndex) * 0.1}s` }}
+                            >
+                              <PlanCard
+                                plan={plan}
+                                isSelected={isSelected}
+                                includePaidMedia={isSelected ? getIncludesPaidMedia(plan) : false}
+                                onSelect={() => handlePlanSelect(plan)}
+                                onTogglePaidMedia={(checked) => setIncludesPaidMedia(plan, checked)}
+                                formatPrice={formatPrice}
+                              />
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </section>
+                  ))}
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+                  {plans.map((plan, index) => {
+                    const isSelected = selectedPlanId === plan.id;
+
+                    return (
+                      <div
+                        key={plan.id}
+                        className="animate-slide-up"
+                        style={{ animationDelay: `${index * 0.1}s` }}
+                      >
+                        <PlanCard
+                          plan={plan}
+                          isSelected={isSelected}
+                          includePaidMedia={isSelected ? getIncludesPaidMedia(plan) : false}
+                          onSelect={() => handlePlanSelect(plan)}
+                          onTogglePaidMedia={(checked) => setIncludesPaidMedia(plan, checked)}
+                          formatPrice={formatPrice}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
 
               {/* Bottom Section - Confirmation */}
               {selectedPlans.length > 0 && selectedPlan && (

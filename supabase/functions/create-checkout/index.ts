@@ -53,7 +53,12 @@ serve(async (req) => {
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    const { franchiseeId, successUrl, cancelUrl, effectiveDate } = await req.json();
+    const { franchiseeId, successUrl, cancelUrl, effectiveDate, selectedPlanIds: requestedSelectedPlanIds = [] } = await req.json();
+    const requestedSelectedPlanIdSet = new Set(
+      Array.isArray(requestedSelectedPlanIds)
+        ? requestedSelectedPlanIds.filter((planId): planId is string => typeof planId === "string" && planId.length > 0)
+        : [],
+    );
 
     console.log("Creating checkout for franchisee:", franchiseeId);
     console.log("Effective date:", effectiveDate);
@@ -144,6 +149,63 @@ serve(async (req) => {
           category: selection.category || selection.plans.category || DEFAULT_PLAN_CATEGORY,
           isPrimary: selection.is_primary === true,
         }));
+
+      const persistedSelectedPlanIdSet = new Set(selectedPlans.map(({ plan }) => plan.id));
+      const hasRequestedSelectionMismatch =
+        requestedSelectedPlanIdSet.size > 0 &&
+        (
+          requestedSelectedPlanIdSet.size !== persistedSelectedPlanIdSet.size ||
+          [...requestedSelectedPlanIdSet].some((planId) => !persistedSelectedPlanIdSet.has(planId))
+        );
+
+      if (hasRequestedSelectionMismatch) {
+        console.warn(
+          "Persisted selected plans did not match checkout request; rebuilding from validated brand plans",
+          {
+            persisted: [...persistedSelectedPlanIdSet],
+            requested: [...requestedSelectedPlanIdSet],
+          },
+        );
+
+        const { data: requestedPlans, error: requestedPlansError } = await supabase
+          .from("plans")
+          .select(`
+            id,
+            name,
+            category,
+            monthly_price,
+            stripe_price_id,
+            stripe_price_id_with_media,
+            setup_fee,
+            trial_days,
+            billing_anchor_day
+          `)
+          .eq("brand_id", franchisee.brand_id)
+          .eq("status", "active")
+          .in("id", [...requestedSelectedPlanIdSet]);
+
+        if (requestedPlansError) {
+          console.error("Requested selected plan fetch error:", requestedPlansError);
+          throw new Error("Could not validate selected plans");
+        }
+
+        if ((requestedPlans || []).length !== requestedSelectedPlanIdSet.size) {
+          throw new Error("One or more selected plans are not available for this brand");
+        }
+
+        selectedPlans = [...requestedSelectedPlanIdSet].map((planId, index) => {
+          const plan = (requestedPlans || []).find((requestedPlan: Plan) => requestedPlan.id === planId) as Plan | undefined;
+          if (!plan) {
+            throw new Error("One or more selected plans are not available for this brand");
+          }
+
+          return {
+            plan,
+            category: plan.category || DEFAULT_PLAN_CATEGORY,
+            isPrimary: index === 0,
+          };
+        });
+      }
 
       if (selectedPlans.length === 0) {
         throw new Error("No selected plans found for this franchisee");
