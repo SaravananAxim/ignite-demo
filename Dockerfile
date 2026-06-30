@@ -1,37 +1,20 @@
-# Stage 1: Build the application
-FROM node:22-alpine AS builder
-
+FROM node:22-alpine
 WORKDIR /app
 
-# Copy dependency files
-COPY package*.json ./
+COPY package.json package-lock.json ./
+RUN npm install
 
-# Install dependencies using clean install
-RUN npm ci
-
-# Copy all source files
+# Copy all source code
 COPY . .
 
-# Build the application
+# Explicitly copy your local .env file into the container as '.env.production'
+# Vite automatically looks for .env.production during production builds
+COPY .env ./.env.production
+
+# Now when this runs, Vite will find the file and bake the keys into the JS
 RUN npm run build
 
-# Stage 2: Serve the built application
-FROM node:22-alpine
-
-WORKDIR /app
-
-# Install serve to run the built app
 RUN npm install -g serve
+EXPOSE 80
+CMD ["serve", "-s", "dist", "-l", "80"]
 
-# Copy built assets from builder
-COPY --from=builder /app/dist ./dist
-
-# Expose port 8080
-EXPOSE 8080
-
-# Health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD wget --quiet --tries=1 --spider http://localhost:8080 || exit 1
-
-# Start the server
-CMD ["serve", "-s", "dist", "-l", "8080"]

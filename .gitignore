@@ -56,3 +56,10 @@ coverage
 # OS files
 .DS_Store
 Thumbs.db
+.pnpmfile.cjs
+JENKINS-ADVANCED.md
+JENKINS-CHECKLIST.md
+JENKINS-SETUP.md
+Jenkinsfile
+sp.json
+
