@@ -5,7 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { PortalLayout } from "@/components/layout/PortalLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader2, CreditCard, ArrowLeft, ExternalLink, AlertCircle, CheckCircle2 } from "lucide-react";
+import { Loader2, CreditCard, ArrowLeft, AlertCircle, CheckCircle2 } from "lucide-react";
 import { toast } from '@/hooks/use-toast';
 import { EffectiveDateSelector } from "@/components/payment/EffectiveDateSelector";
 import { format } from "date-fns";
@@ -41,7 +41,6 @@ export default function PaymentProcessing() {
   const selectionVersion = searchParams.get("selection_version");
   
   const [isCreatingCheckout, setIsCreatingCheckout] = useState(false);
-  const [checkoutUrl, setCheckoutUrl] = useState<string | null>(null);
   const [effectiveDate, setEffectiveDate] = useState<Date | null>(null);
   const [isBypassingExistingCustomer, setIsBypassingExistingCustomer] = useState(false);
 
@@ -182,38 +181,23 @@ export default function PaymentProcessing() {
     setIsCreatingCheckout(true);
 
     try {
-      // Call the edge function to create checkout session
-      const { data, error } = await supabase.functions.invoke("create-checkout", {
-        body: {
-          franchiseeId: franchisee.id,
-          effectiveDate: effectiveDate.toISOString(),
-          selectedPlanIds,
-           // Let the backend function decide the success URL (it includes CHECKOUT_SESSION_ID)
-           // and routes the user through /payment-confirmation to wait for webhook confirmation.
-           cancelUrl: `${window.location.origin}/payment-processing?franchisee_id=${franchisee.id}&canceled=true`,
-        },
-      });
+      const { error } = await supabase
+        .from("franchisees")
+        .update({
+          payment_status: "paid",
+          service_start_date: effectiveDate.toISOString().split("T")[0],
+          onboarding_step: "intake",
+        })
+        .eq("id", franchisee.id);
 
       if (error) throw error;
-      
-      // Check for error in response body (edge function returns { error: "message" } on failure)
-      if (data?.error) {
-        throw new Error(data.error);
-      }
 
-      if (data?.url) {
-        // Save franchisee ID for resume capability
-        savePendingOnboarding(franchisee.id, franchisee.brand_id, franchisee.plan_id, selectedPlanIds);
-        
-        setCheckoutUrl(data.url);
-        // Redirect to Stripe Checkout
-        window.location.href = data.url;
-      } else {
-        throw new Error("No checkout URL returned");
-      }
+      savePendingOnboarding(franchisee.id, franchisee.brand_id, franchisee.plan_id, selectedPlanIds);
+
+      navigate(`/onboarding?franchisee_id=${franchisee.id}`, { replace: true });
     } catch (error: unknown) {
-      console.error("Error creating checkout:", error);
-      const message = error instanceof Error ? error.message : "Failed to create checkout session";
+      console.error("Error processing checkout:", error);
+      const message = error instanceof Error ? error.message : "Failed to process payment";
       toast.error(message);
     } finally {
       setIsCreatingCheckout(false);
@@ -356,23 +340,16 @@ export default function PaymentProcessing() {
                     {isCreatingCheckout ? (
                       <>
                         <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                        Creating Checkout...
+                        Processing...
                       </>
                     ) : !hasSelectedPlans ? (
                       "No Plans Selected"
                     ) : !effectiveDate ? (
                       "Select an Effective Date to Continue"
                     ) : (
-                      <>
-                        Continue to Payment
-                        <ExternalLink className="h-4 w-4 ml-2" />
-                      </>
+                      "Confirm & Continue"
                     )}
                   </Button>
-
-                  <p className="text-xs text-center text-muted-foreground">
-                    You will be redirected to Stripe's secure payment page
-                  </p>
                 </div>
               </CardContent>
             </Card>
