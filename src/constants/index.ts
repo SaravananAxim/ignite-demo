@@ -106,8 +106,8 @@ export const SUCCESS_MESSAGES = {
  * Update BASE_DOMAIN when connecting a custom domain with wildcard DNS
  */
 export const PORTAL = {
-  BASE_DOMAIN: 'ignitevisibility-signup-portal.com',
-  getPortalUrl: (subdomain: string) => `https://${subdomain}.ignitevisibility-signup-portal.com`,
+  BASE_DOMAIN: 'rallio.com',
+  getPortalUrl: (subdomain: string) => `https://signup-${subdomain}-qa.rallio.com`,
   /** sessionStorage key for persisting the subdomain the user signed up / is using (so we can redirect from root) */
   STORAGE_KEY_SUBDOMAIN: 'portal_subdomain',
 } as const;

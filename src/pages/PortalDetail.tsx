@@ -370,7 +370,7 @@ export default function PortalDetail() {
                     Live
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent>Open {portal.subdomain}.{PORTAL.BASE_DOMAIN}</TooltipContent>
+                <TooltipContent>Open signup-{portal.subdomain}-qa.{PORTAL.BASE_DOMAIN}</TooltipContent>
               </Tooltip>
             </div>
           </TooltipProvider>

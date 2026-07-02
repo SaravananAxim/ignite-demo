@@ -22,10 +22,10 @@ const PortalContext = createContext<PortalContextType | undefined>(undefined);
 
 /**
  * Extracts subdomain from the current URL relative to the configured BASE_DOMAIN
- * Example: For BASE_DOMAIN = 'ignitevisibility-signup-portal.com'
- *   - ignitevisibility-signup-portal.com → null (root, no subdomain)
- *   - test.ignitevisibility-signup-portal.com → 'test'
- *   - demo.ignitevisibility-signup-portal.com → 'demo'
+ * Example: For BASE_DOMAIN = 'rallio.com'
+ *   - rallio.com → null (root, no subdomain)
+ *   - signup-test-qa.rallio.com → 'test'
+ *   - signup-demo-qa.rallio.com → 'demo'
  * Returns null for root domain, IP addresses, or localhost without subdomain
  */
 function extractSubdomain(): string | null {
@@ -63,9 +63,10 @@ function extractSubdomain(): string | null {
   }
   
   if (hostname.endsWith(`.${baseDomain}`)) {
-    // Extract subdomain relative to base domain
-    // e.g., test.ignitevisibility-signup-portal.com -> test
-    const subdomain = hostname.replace(`.${baseDomain}`, '');
+    // Extract subdomain from hostname pattern: signup-{subdomain}-qa.rallio.com
+    // e.g., signup-test-qa.rallio.com -> test
+    const prefix = hostname.replace(`.${baseDomain}`, '');
+    const subdomain = prefix.replace(/^signup-/, '').replace(/-qa$/, '');
     
     // Ignore common non-portal subdomains
     const ignoredSubdomains = ['www', 'api', 'admin', 'app'];

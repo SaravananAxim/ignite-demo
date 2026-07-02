@@ -23,7 +23,7 @@ export default function PortalNotFound() {
             Please access your organization's portal using your dedicated subdomain.
           </p>
           <p className="text-sm text-muted-foreground">
-            Example: <span className="font-mono text-primary">yourorg.{PORTAL.BASE_DOMAIN}</span>
+            Example: <span className="font-mono text-primary">signup-yourorg-qa.{PORTAL.BASE_DOMAIN}</span>
           </p>
         </div>
       </div>
