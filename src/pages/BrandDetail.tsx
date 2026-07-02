@@ -209,7 +209,9 @@ export default function BrandDetail() {
     mutationFn: async (data: typeof planFormData) => {
       if (!brandId) throw new Error('No brand selected');
       setIsCreatingStripe(true);
-      const stripeData = await createStripeProduct(data);
+      
+      // Bypassed Stripe product/pricing creation for now
+      // const stripeData = await createStripeProduct(data);
 
       const currentPlans = queryClient.getQueryData<Plan[]>(['brand-plans', brandId]) ?? [];
       const nextOrder = currentPlans.length > 0 ? Math.max(...currentPlans.map((p) => p.display_order)) + 1 : 0;
@@ -224,8 +226,8 @@ export default function BrandDetail() {
         setup_fee: data.setup_fee ? parseFloat(data.setup_fee) : null,
         stripe_payment_link: '',
         stripe_payment_link_with_media: null,
-        stripe_price_id: stripeData.priceId,
-        stripe_price_id_with_media: stripeData.priceIdWithMedia,
+        stripe_price_id: null,
+        stripe_price_id_with_media: null,
         supports_paid_media: data.supports_paid_media,
         requires_paid_media: data.requires_paid_media,
         category: data.category,
@@ -240,7 +242,7 @@ export default function BrandDetail() {
       queryClient.invalidateQueries({ queryKey: ['plans'] });
       queryClient.invalidateQueries({ queryKey: ['plans-list'] });
       queryClient.invalidateQueries({ queryKey: ['plans-management'] });
-      toast.success('Plan created with Stripe integration');
+      toast.success('Plan created successfully');
       resetPlanForm();
     },
     onError: (error: Error) => {
@@ -258,6 +260,8 @@ export default function BrandDetail() {
         ? parseFloat(data.monthly_price_with_media) 
         : null;
       
+      // Bypassed Stripe product update/sync for now
+      /*
       // Check if pricing changed - if so, recreate Stripe prices
       const priceChanged = newMonthlyPrice !== originalPlan.monthly_price;
       const mediaPriceChanged = newMediaPrice !== originalPlan.monthly_price_with_media;
@@ -284,6 +288,7 @@ export default function BrandDetail() {
         if (stripeError) throw new Error(stripeError.message);
         if (updateResult?.error) throw new Error(updateResult.error);
       }
+      */
 
       const { error } = await supabase.from('plans').update({
         name: data.name,
@@ -296,7 +301,6 @@ export default function BrandDetail() {
         category: data.category,
         contract_template_id: data.contract_template_id || null,
         status: data.status,
-        ...stripeUpdate,
       }).eq('id', planId);
       if (error) throw error;
     },
