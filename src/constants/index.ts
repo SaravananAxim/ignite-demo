@@ -54,11 +54,11 @@ export const STATUS_COLORS = {
   active: 'bg-green-100 text-green-800',
   inactive: 'bg-gray-100 text-gray-800',
   cancelled: 'bg-red-100 text-red-800',
-  
+
   // Payment status
   trial: 'bg-purple-100 text-purple-800',
   past_due: 'bg-orange-100 text-orange-800',
-  
+
   // Contract status
   draft: 'bg-gray-100 text-gray-800',
   sent: 'bg-blue-100 text-blue-800',
@@ -107,7 +107,7 @@ export const SUCCESS_MESSAGES = {
  */
 export const PORTAL = {
   BASE_DOMAIN: 'rallio.com',
-  getPortalUrl: (subdomain: string) => `https://signup-${subdomain}-qa.rallio.com`,
+  getPortalUrl: (subdomain: string) => `https://signup-${subdomain}-qa.rallio.com/onboarding`,
   /** sessionStorage key for persisting the subdomain the user signed up / is using (so we can redirect from root) */
   STORAGE_KEY_SUBDOMAIN: 'portal_subdomain',
 } as const;
