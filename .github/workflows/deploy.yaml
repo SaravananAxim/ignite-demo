@@ -27,11 +27,9 @@ jobs:
       run: |
         echo "========== Verifying Workspace Files =========="
         ls -la
-    - name: Inject Environment File
-      run: |
-        echo "${{ secrets.ENV_FILE_CONTENT }}" > .env
-    - name: Build Docker Image
-      run: |
+    
+    
+        run: |
         echo "========== Building Docker image =========="
         docker build --no-cache -t ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }} .
     - name: Login to ACR
