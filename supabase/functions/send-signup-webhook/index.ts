@@ -82,10 +82,10 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const COUNTER_SIGN_BASE_URL = "https://www.ignitevisibility-signup-portal.com/admin/pending-signatures";
+const COUNTER_SIGN_BASE_URL = "https://ignite-fagzedgsg8bdfhe7.southindia-01.azurewebsites.net/admin/pending-signatures";
 
 const ENABLE_LEGACY_PORTAL_WEBHOOKS = Deno.env.get("ENABLE_LEGACY_PORTAL_WEBHOOKS") !== "false";
-const ENABLE_CENTRALIZED_WEBHOOKS = Deno.env.get("ENABLE_CENTRALIZED_WEBHOOKS") === "true";
+const ENABLE_CENTRALIZED_WEBHOOKS = Deno.env.get("ENABLE_CENTRALIZED_WEBHOOKS") !== "false";
 
 const isObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null;
