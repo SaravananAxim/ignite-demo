@@ -91,12 +91,11 @@ function getResumeUrl(
   franchiseeId: string,
   step: string | null,
   paymentStatus: string | null,
-  customerType?: string | null,
   existingCustomerLogic?: boolean | null,
 ): string {
-  const isExistingCustomerBypass = customerType === 'existing' && existingCustomerLogic === true;
+  const isExistingCustomerLogicBypass = existingCustomerLogic === true;
 
-  if (isExistingCustomerBypass) {
+  if (isExistingCustomerLogicBypass) {
     return `/onboarding?franchisee_id=${franchiseeId}`;
   }
 
@@ -205,7 +204,7 @@ export function useOnboardingResume() {
   const paymentStatus = franchisee?.payment_status ?? null;
   const canCancelAndSwitch = paymentStatus === 'pending' || paymentStatus === 'pending_checkout';
 
-  const brandDetails = franchisee?.brands as { name?: string } | null | undefined;
+  const brandDetails = franchisee?.brands as { existing_customer_logic?: boolean; name?: string } | null | undefined;
   const planDetails = franchisee?.plans as { name?: string } | null | undefined;
   const selectedPlanDetails = (franchisee?.selectedPlans ?? []) as Array<{
     category?: string | null;
@@ -230,8 +229,7 @@ export function useOnboardingResume() {
       franchisee.id,
       franchisee.onboarding_step,
       franchisee.payment_status,
-      franchisee.customer_type,
-      planDetails?.existing_customer_logic,
+      brandDetails?.existing_customer_logic,
     ),
   } : null;
 

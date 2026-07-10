@@ -134,10 +134,7 @@ export default function Plans() {
       setIsCreatingStripe(true);
       const { data: maxRow } = await supabase.from('plans').select('display_order').eq('brand_id', data.brand_id).order('display_order', { ascending: false }).limit(1).maybeSingle();
       const nextOrder = maxRow != null ? maxRow.display_order + 1 : 0;
-      
-      // Bypassed Stripe product/pricing creation for now
-      // const stripeData = await createStripeProduct(data);
-      
+      const stripeData = await createStripeProduct(data);
       const { data: created, error } = await supabase.from('plans').insert([{
         brand_id: data.brand_id,
         name: data.name,
@@ -149,8 +146,8 @@ export default function Plans() {
           : null,
         stripe_payment_link: '',
         stripe_payment_link_with_media: null,
-        stripe_price_id: null,
-        stripe_price_id_with_media: null,
+        stripe_price_id: stripeData.priceId,
+        stripe_price_id_with_media: stripeData.priceIdWithMedia,
         supports_paid_media: data.supports_paid_media,
         requires_paid_media: data.requires_paid_media,
         category: data.category,
@@ -172,7 +169,7 @@ export default function Plans() {
       if (created) {
         await activityLogger.logActivity('plan_created', 'plan', created.id, { name: created.name });
       }
-      toast.success('Plan created successfully');
+      toast.success('Plan created with Stripe integration');
       resetForm();
     },
     onError: (error: Error) => {
@@ -185,8 +182,6 @@ export default function Plans() {
 
   const updateMutation = useMutation({
     mutationFn: async ({ id, data, originalPlan }: { id: string; data: typeof formData; originalPlan: Plan | null }) => {
-      // Bypassed Stripe product update/sync for now
-      /*
       if (originalPlan?.stripe_price_id) {
         // Always sync name/description to Stripe on save (decoded so no &amp; / &nbsp; in Stripe)
         const selectedBrand = brands?.find(b => b.id === data.brand_id);
@@ -203,7 +198,6 @@ export default function Plans() {
         if (stripeError) throw new Error(stripeError.message);
         if (updateResult?.error) throw new Error(updateResult.error);
       }
-      */
       const { data: updated, error } = await supabase.from('plans').update({
         brand_id: data.brand_id,
         name: data.name,

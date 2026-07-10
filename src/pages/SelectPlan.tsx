@@ -48,8 +48,6 @@ export default function SelectPlan() {
   const [searchParams] = useSearchParams();
   const brandId = searchParams.get('brand_id');
   const portalParam = searchParams.get('portal');
-  const initialCustomerType = searchParams.get('customer_type') === 'existing' ? 'existing' : 'new';
-  const [selectedCustomerType, setSelectedCustomerType] = useState<'new' | 'existing'>(initialCustomerType);
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
   const [selectedPlanIdsByCategory, setSelectedPlanIdsByCategory] = useState<SelectedPlanMap>({});
   const [includePaidMedia, setIncludePaidMedia] = useState(false);
@@ -175,14 +173,7 @@ export default function SelectPlan() {
 
   const isLoading = brandLoading || plansLoading;
   const brandAllowsExistingCustomers = brand?.existing_customer_logic === true;
-  const effectiveCustomerType = brandAllowsExistingCustomers ? selectedCustomerType : 'new';
-
-  const handleCustomerTypeChange = (value: 'new' | 'existing') => {
-    setSelectedCustomerType(value);
-    const params = new URLSearchParams(searchParams);
-    params.set('customer_type', value);
-    navigate(`/select-plan?${params.toString()}`, { replace: true });
-  };
+  const effectiveCustomerType = brandAllowsExistingCustomers ? 'existing' : 'new';
 
   const canSelectPaidMedia = (plan: { supports_paid_media?: boolean | null; stripe_price_id_with_media?: string | null }) => {
     // Allow paid media if plan has Stripe price configured
@@ -457,27 +448,6 @@ export default function SelectPlan() {
                 ? 'Choose up to one plan from each category, with at least one plan selected overall.'
                 : 'Choose the plan that best fits your business goals and budget.'}
             </p>
-            {brandAllowsExistingCustomers && (
-              <div className="mt-6 max-w-xl mx-auto rounded-lg border bg-card p-4 shadow-card">
-                <p className="text-label text-muted-foreground mb-3 uppercase">Are you a New or Existing Customer?</p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {[
-                    { value: 'new' as const, label: 'New Customer' },
-                    { value: 'existing' as const, label: 'Existing Customer' },
-                  ].map((option) => (
-                    <Button
-                      key={option.value}
-                      type="button"
-                      variant={selectedCustomerType === option.value ? 'default' : 'outline'}
-                      className="h-auto justify-center p-4"
-                      onClick={() => handleCustomerTypeChange(option.value)}
-                    >
-                      <span className="font-semibold">{option.label}</span>
-                    </Button>
-                  ))}
-                </div>
-              </div>
-            )}
           </div>
 
           {/* Loading State */}

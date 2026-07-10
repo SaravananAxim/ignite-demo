@@ -20,7 +20,7 @@ import { Loader2, FileText, AlertCircle } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { ContractTemplateRow } from "@/types/contract";
 import { replacePlaceholders, sanitizeContractHtml } from "@/lib/pdfGenerator";
-import { applyConditionalSections, buildSelectedCategorySet } from "@/lib/contractSections";
+import { applyConditionalSections, buildSectionPlanNamePlaceholders, buildSelectedCategorySet } from "@/lib/contractSections";
 import { ContractPreview } from "./ContractPreview";
 import { supabase } from "@/integrations/supabase/client";
 import { format } from "date-fns";
@@ -128,6 +128,11 @@ export function GenerateContractModal({
   const selectedCategorySet = useMemo(
     () => buildSelectedCategorySet(selectedCategoryLabels),
     [selectedCategoryLabels],
+  );
+
+  const sectionPlaceholderValues = useMemo(
+    () => buildSectionPlanNamePlaceholders(selectedPlans),
+    [selectedPlans],
   );
 
   // Build placeholder values from selected franchisee
@@ -238,12 +243,17 @@ export function GenerateContractModal({
   const generatedHtml = useMemo(() => {
     if (!template || !selectedFranchisee) return "";
     const isNewLocation = selectedFranchisee.is_new_location === true;
-    const html = applyConditionalSections(template.html_content, selectedCategorySet, isNewLocation);
+    const html = applyConditionalSections(
+      template.html_content,
+      selectedCategorySet,
+      isNewLocation,
+      sectionPlaceholderValues,
+    );
 
     let result = replacePlaceholders(html, placeholderValues);
     result = sanitizeContractHtml(result);
     return result;
-  }, [template, selectedFranchisee, placeholderValues, selectedCategorySet]);
+  }, [template, selectedFranchisee, placeholderValues, selectedCategorySet, sectionPlaceholderValues]);
 
   const handleClose = () => {
     setSelectedFranchiseeId("");

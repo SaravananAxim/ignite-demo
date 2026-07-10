@@ -13,7 +13,7 @@ import { Loader2, ArrowRight, ArrowLeft, FileText, PenTool, AlertCircle } from "
 import { toast } from '@/hooks/use-toast';
 import { replacePlaceholders, sanitizeContractHtml, insertSignatureImages, generateContractPDF } from "@/lib/pdfGenerator";
 import { activityLogger } from "@/lib/activityLogger";
-import { applyConditionalSections, buildSelectedCategorySet } from "@/lib/contractSections";
+import { applyConditionalSections, buildSectionPlanNamePlaceholders, buildSelectedCategorySet } from "@/lib/contractSections";
 import { format } from "date-fns";
 
 
@@ -324,7 +324,12 @@ const ContractReview = forwardRef<HTMLDivElement, Record<string, never>>(functio
       franchiseeAddress: fullAddress || franchisee.address || "",
     };
 
-    const html = applyConditionalSections(template.html_content, selectedCategorySet, isNewLocation);
+    const html = applyConditionalSections(
+      template.html_content,
+      selectedCategorySet,
+      isNewLocation,
+      buildSectionPlanNamePlaceholders(effectiveSelectedPlans),
+    );
 
     let result = replacePlaceholders(html, placeholderValues);
     result = sanitizeContractHtml(result);
