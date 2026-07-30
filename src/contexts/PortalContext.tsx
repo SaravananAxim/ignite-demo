@@ -21,14 +21,13 @@ interface PortalContextType {
 const PortalContext = createContext<PortalContextType | undefined>(undefined);
 
 /**
- * Extracts subdomain from the current URL relative to the configured BASE_DOMAIN
+ * Extracts portal ID from the current URL path
  * Example: For BASE_DOMAIN = 'rallio.com'
- *   - rallio.com → null (root, no subdomain)
- *   - signup-test-qa.rallio.com → 'test'
- *   - signup-demo-qa.rallio.com → 'demo'
- * Returns null for root domain, IP addresses, or localhost without subdomain
+ *   - signup-qa.rallio.com/onboarding/abc123 → 'abc123'
+ *   - signup-qa.rallio.com/onboarding/abc123/select-brand → 'abc123'
+ * Returns null for root domain, IP addresses, or localhost without path
  */
-function extractSubdomain(): string | null {
+function extractPortalId(): string | null {
   // Check for query parameter override first (for testing without DNS)
   const urlParams = new URLSearchParams(window.location.search);
   const portalParam = urlParams.get('portal');
@@ -38,57 +37,56 @@ function extractSubdomain(): string | null {
 
   const hostname = window.location.hostname.toLowerCase();
   const baseDomain = PORTAL.BASE_DOMAIN.toLowerCase();
-  
-  // Handle IP addresses - no subdomain possible
+  const pathname = window.location.pathname;
+
+  // Handle IP addresses - no portal ID possible
   const ipRegex = /^(\d{1,3}\.){3}\d{1,3}$/;
   if (ipRegex.test(hostname)) {
     return null;
   }
-  
-  // Handle localhost (no subdomain)
+
+  // Handle localhost (no portal ID)
   if (hostname === 'localhost' || hostname === '127.0.0.1') {
     return null;
   }
-  
-  // Handle *.localhost (e.g., test.localhost:3000)
-  if (hostname.endsWith('.localhost')) {
-    const subdomain = hostname.replace('.localhost', '');
-    return subdomain || null;
-  }
-  
+
   // Check if hostname matches or is a subdomain of BASE_DOMAIN
   if (hostname === baseDomain) {
-    // Exact match to base domain - no subdomain
-    return null;
+    // Exact match to base domain - check path for /onboarding/{portalId}
+    const match = pathname.match(/^\/onboarding\/([^\/]+)/);
+    return match ? match[1] : null;
   }
-  
+
   if (hostname.endsWith(`.${baseDomain}`)) {
-    // Extract subdomain from hostname pattern: signup-{subdomain}-qa.rallio.com
-    // e.g., signup-test-qa.rallio.com -> test
+    // Check for signup-qa.rallio.com pattern
     const prefix = hostname.replace(`.${baseDomain}`, '');
+    if (prefix === 'signup-qa') {
+      // Extract portal ID from path: /onboarding/{portalId}
+      const match = pathname.match(/^\/onboarding\/([^\/]+)/);
+      return match ? match[1] : null;
+    }
+
+    // Legacy support: extract subdomain from hostname pattern: signup-{subdomain}-qa.rallio.com
     const subdomain = prefix.replace(/^signup-/, '').replace(/-qa$/, '');
-    
-    // Ignore common non-portal subdomains
     const ignoredSubdomains = ['www', 'api', 'admin', 'app'];
     if (ignoredSubdomains.includes(subdomain)) {
       return null;
     }
-    
     return subdomain || null;
   }
-  
+
   // Hostname doesn't match base domain pattern - fallback for other deployments
   const parts = hostname.split('.');
   if (parts.length <= 2) {
     return null;
   }
-  
+
   const subdomain = parts[0];
   const ignoredSubdomains = ['www', 'api', 'admin', 'app'];
   if (ignoredSubdomains.includes(subdomain)) {
     return null;
   }
-  
+
   return subdomain;
 }
 
@@ -107,16 +105,16 @@ export function PortalProvider({ children, devSubdomain }: PortalProviderProps) 
   const [error, setError] = useState<string | null>(null);
   const [retryCount, setRetryCount] = useState(0);
 
-  const fetchPortal = async (subdomain: string) => {
+  const fetchPortal = async (portalId: string) => {
     setLoading(true);
     setError(null);
 
     try {
-      // Use case-insensitive lookup for portal subdomain
+      // Use case-insensitive lookup for portal ID
       const { data, error: dbError } = await supabase
         .from('portals')
         .select('id, name, require_payment, subdomain')
-        .ilike('subdomain', subdomain)
+        .ilike('id', portalId)
         .maybeSingle();
 
       if (dbError) {
@@ -140,7 +138,7 @@ export function PortalProvider({ children, devSubdomain }: PortalProviderProps) 
       });
       setError(null);
       try {
-        sessionStorage.setItem(PORTAL.STORAGE_KEY_SUBDOMAIN, data.subdomain);
+        sessionStorage.setItem(PORTAL.STORAGE_KEY_SUBDOMAIN, data.id);
       } catch {
         // Ignore storage errors
       }
@@ -159,16 +157,16 @@ export function PortalProvider({ children, devSubdomain }: PortalProviderProps) 
 
   useEffect(() => {
     // Use dev subdomain override if provided, otherwise extract from URL
-    const subdomain = devSubdomain || extractSubdomain();
+    const portalId = devSubdomain || extractPortalId();
 
-    if (!subdomain) {
-      // No subdomain detected - this is the root domain or invalid access
+    if (!portalId) {
+      // No portal ID detected - this is the root domain or invalid access
       setLoading(false);
       setError('no_subdomain');
       return;
     }
 
-    fetchPortal(subdomain);
+    fetchPortal(portalId);
   }, [devSubdomain, retryCount]);
 
   return (

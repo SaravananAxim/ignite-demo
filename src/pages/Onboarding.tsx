@@ -22,7 +22,11 @@ import { INITIAL_INTAKE_DATA, type IntakeFormData } from "@/types/franchisee";
 type OnboardingSelectedPlan = {
   category: string;
   plans: {
+    id: string;
+    name: string;
     category: string | null;
+    monthly_price: number | null;
+    setup_fee: number | null;
   } | null;
 };
 
@@ -137,14 +141,16 @@ export default function Onboarding() {
   });
 
   const { data: selectedPlanRows = [], isLoading: selectedPlanCategoriesLoading } = useQuery({
-    queryKey: ["franchisee-selected-plan-categories", franchiseeId],
+    queryKey: ["franchisee-selected-plans", franchiseeId],
     queryFn: async () => {
       if (!franchiseeId) return [];
 
       const { data, error } = await supabase
         .from("franchisee_plans")
-        .select("category, plans(category)")
-        .eq("franchisee_id", franchiseeId);
+        .select("category, is_primary, plans(id, name, category, monthly_price, setup_fee)")
+        .eq("franchisee_id", franchiseeId)
+        .order("is_primary", { ascending: false })
+        .order("category", { ascending: true });
 
       if (error) throw error;
       return (data || []) as OnboardingSelectedPlan[];
@@ -163,6 +169,14 @@ export default function Onboarding() {
 
     return new Set(categories);
   }, [plan?.category, selectedPlanRows]);
+
+  const selectedPlans = useMemo(() => {
+    const persistedPlans = selectedPlanRows
+      .map((selection) => selection.plans)
+      .filter((selectedPlan): selectedPlan is NonNullable<OnboardingSelectedPlan["plans"]> => !!selectedPlan);
+
+    return persistedPlans.length > 0 ? persistedPlans : plan ? [plan] : [];
+  }, [plan, selectedPlanRows]);
 
   const paidMediaParam = searchParams.get("paid_media") === "true";
   const requiresPaidMediaBudget =
@@ -882,11 +896,23 @@ export default function Onboarding() {
                       </div>
                     )}
                     
-                    <div>
-                      <p className="font-semibold text-lg">{plan?.name}</p>
-                      <p className="text-2xl font-bold text-primary">
-                        ${plan?.monthly_price?.toLocaleString()}/mo
-                      </p>
+                    <div className="space-y-3">
+                      {selectedPlans.map((selectedPlan, index) => (
+                        <div
+                          key={selectedPlan.id}
+                          className={index > 0 ? "pt-3 border-t border-border" : undefined}
+                        >
+                          <p className="font-semibold text-lg">{selectedPlan.name}</p>
+                          <p className="text-2xl font-bold text-primary">
+                            ${Number(selectedPlan.monthly_price || 0).toLocaleString()}/mo
+                          </p>
+                          {Number(selectedPlan.setup_fee || 0) > 0 && (
+                            <p className="text-sm text-muted-foreground mt-1">
+                              Setup Fee: ${Number(selectedPlan.setup_fee).toLocaleString()}
+                            </p>
+                          )}
+                        </div>
+                      ))}
                     </div>
 
                     {effectiveIncludePaidMedia && (
@@ -897,13 +923,6 @@ export default function Onboarding() {
                       </div>
                     )}
 
-                    {plan?.setup_fee && Number(plan.setup_fee) > 0 && (
-                      <div className="pt-3 border-t border-border">
-                        <p className="text-sm text-muted-foreground">
-                          Setup Fee: ${Number(plan.setup_fee).toLocaleString()}
-                        </p>
-                      </div>
-                    )}
                   </CardContent>
                 </Card>
 

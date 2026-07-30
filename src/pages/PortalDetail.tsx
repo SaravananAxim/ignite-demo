@@ -362,7 +362,7 @@ export default function PortalDetail() {
                     variant="outline"
                     size="sm"
                     onClick={() => {
-                      const liveUrl = PORTAL.getPortalUrl(portal.subdomain);
+                      const liveUrl = PORTAL.getPortalUrl(portal.id);
                       window.open(liveUrl, '_blank');
                     }}
                   >
@@ -370,7 +370,7 @@ export default function PortalDetail() {
                     Live
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent>Open signup-{portal.subdomain}-qa.{PORTAL.BASE_DOMAIN}</TooltipContent>
+                <TooltipContent>Open signup-qa.{PORTAL.BASE_DOMAIN}/onboarding/{portal.id}</TooltipContent>
               </Tooltip>
             </div>
           </TooltipProvider>

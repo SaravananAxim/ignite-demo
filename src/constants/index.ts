@@ -107,7 +107,7 @@ export const SUCCESS_MESSAGES = {
  */
 export const PORTAL = {
   BASE_DOMAIN: 'rallio.com',
-  getPortalUrl: (subdomain: string) => `https://signup-${subdomain}-qa.rallio.com/onboarding`,
+  getPortalUrl: (portalId: string) => `https://signup-qa.rallio.com/onboarding/${portalId}`,
   /** sessionStorage key for persisting the subdomain the user signed up / is using (so we can redirect from root) */
   STORAGE_KEY_SUBDOMAIN: 'portal_subdomain',
 } as const;

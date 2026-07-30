@@ -301,7 +301,7 @@ export default function Portals() {
                                   size="sm"
                                   className="gap-1.5"
                                   onClick={() => {
-                                    const liveUrl = PORTAL.getPortalUrl(portal.subdomain);
+                                    const liveUrl = PORTAL.getPortalUrl(portal.id);
                                     window.open(liveUrl, '_blank');
                                   }}
                                 >
@@ -310,7 +310,7 @@ export default function Portals() {
                                 </Button>
                               </TooltipTrigger>
                               <TooltipContent>
-                                <p>Open actual portal (signup-{portal.subdomain}-qa.{PORTAL.BASE_DOMAIN})</p>
+                                <p>Open actual portal (signup-qa.{PORTAL.BASE_DOMAIN}/onboarding/{portal.id})</p>
                               </TooltipContent>
                             </Tooltip>
                           </div>

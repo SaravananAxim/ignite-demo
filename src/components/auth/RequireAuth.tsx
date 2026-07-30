@@ -44,10 +44,10 @@ export function RequireAuth({
     // so they don't land on root and get an invalid experience
     if (redirectTo === '/franchisee-auth') {
       try {
-        const storedSubdomain = sessionStorage.getItem(PORTAL.STORAGE_KEY_SUBDOMAIN);
-        if (storedSubdomain) {
+        const storedPortalId = sessionStorage.getItem(PORTAL.STORAGE_KEY_SUBDOMAIN);
+        if (storedPortalId) {
           const search = location.search || '';
-          window.location.href = `${PORTAL.getPortalUrl(storedSubdomain)}/franchisee-auth${search}`;
+          window.location.href = `${PORTAL.getPortalUrl(storedPortalId)}/franchisee-auth${search}`;
           return (
             <div className="min-h-screen flex items-center justify-center bg-muted">
               <Loader2 className="w-8 h-8 animate-spin text-primary" />

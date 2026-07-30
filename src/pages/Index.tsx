@@ -34,7 +34,7 @@ export default function Index() {
         params.delete('portal');
         const qs = params.toString();
         const hash = window.location.hash || '';
-        window.location.href = `${PORTAL.getPortalUrl(portal.subdomain)}${path}${qs ? '?' + qs : ''}${hash}`;
+        window.location.href = `${PORTAL.getPortalUrl(portal.portal_id)}${path}${qs ? '?' + qs : ''}${hash}`;
         return;
       }
       if (user) {
@@ -46,12 +46,12 @@ export default function Index() {
     }
 
     // On root with no portal in URL: redirect franchisees and unauthenticated users
-    // to their persisted portal subdomain so they don't get an invalid/root experience
-    const storedSubdomain = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem(PORTAL.STORAGE_KEY_SUBDOMAIN) : null;
-    if (storedSubdomain && (role === 'franchisee' || !user)) {
+    // to their persisted portal so they don't get an invalid/root experience
+    const storedPortalId = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem(PORTAL.STORAGE_KEY_SUBDOMAIN) : null;
+    if (storedPortalId && (role === 'franchisee' || !user)) {
       const path = user ? '/my-locations' : '/franchisee-auth';
       const search = window.location.search || '';
-      window.location.href = `${PORTAL.getPortalUrl(storedSubdomain)}${path}${search}`;
+      window.location.href = `${PORTAL.getPortalUrl(storedPortalId)}${path}${search}`;
       return;
     }
 
