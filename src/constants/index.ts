@@ -106,8 +106,8 @@ export const SUCCESS_MESSAGES = {
  * Update BASE_DOMAIN when connecting a custom domain with wildcard DNS
  */
 export const PORTAL = {
-  BASE_DOMAIN: 'rallio.com',
-  getPortalUrl: (portalId: string) => `https://signup-qa.rallio.com/onboarding/${portalId}`,
+  BASE_DOMAIN: 'rall.io',
+  getPortalUrl: (portalId: string) => `https://app-signup-qa.rall.io/onboarding/${portalId}`,
   /** sessionStorage key for persisting the subdomain the user signed up / is using (so we can redirect from root) */
   STORAGE_KEY_SUBDOMAIN: 'portal_subdomain',
 } as const;

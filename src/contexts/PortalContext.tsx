@@ -22,9 +22,9 @@ const PortalContext = createContext<PortalContextType | undefined>(undefined);
 
 /**
  * Extracts portal ID from the current URL path
- * Example: For BASE_DOMAIN = 'rallio.com'
- *   - signup-qa.rallio.com/onboarding/abc123 → 'abc123'
- *   - signup-qa.rallio.com/onboarding/abc123/select-brand → 'abc123'
+ * Example: For BASE_DOMAIN = 'rall.io'
+ *   - app-signup-qa.rall.io/onboarding/abc123 → 'abc123'
+ *   - app-signup-qa.rall.io/onboarding/abc123/select-brand → 'abc123'
  * Returns null for root domain, IP addresses, or localhost without path
  */
 function extractPortalId(): string | null {
@@ -58,16 +58,16 @@ function extractPortalId(): string | null {
   }
 
   if (hostname.endsWith(`.${baseDomain}`)) {
-    // Check for signup-qa.rallio.com pattern
+    // Check for app-signup-qa.rall.io pattern
     const prefix = hostname.replace(`.${baseDomain}`, '');
-    if (prefix === 'signup-qa') {
+    if (prefix === 'app-signup-qa') {
       // Extract portal ID from path: /onboarding/{portalId}
       const match = pathname.match(/^\/onboarding\/([^\/]+)/);
       return match ? match[1] : null;
     }
 
-    // Legacy support: extract subdomain from hostname pattern: signup-{subdomain}-qa.rallio.com
-    const subdomain = prefix.replace(/^signup-/, '').replace(/-qa$/, '');
+    // Legacy support: extract subdomain from hostname pattern: app-signup-{subdomain}-qa.rall.io
+    const subdomain = prefix.replace(/^app-signup-/, '').replace(/-qa$/, '');
     const ignoredSubdomains = ['www', 'api', 'admin', 'app'];
     if (ignoredSubdomains.includes(subdomain)) {
       return null;

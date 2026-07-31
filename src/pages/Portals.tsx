@@ -310,7 +310,7 @@ export default function Portals() {
                                 </Button>
                               </TooltipTrigger>
                               <TooltipContent>
-                                <p>Open actual portal (signup-qa.{PORTAL.BASE_DOMAIN}/onboarding/{portal.id})</p>
+                                <p>Open actual portal (app-signup-qa.{PORTAL.BASE_DOMAIN}/onboarding/{portal.id})</p>
                               </TooltipContent>
                             </Tooltip>
                           </div>
