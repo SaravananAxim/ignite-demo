@@ -114,7 +114,7 @@ export function PortalProvider({ children, devSubdomain }: PortalProviderProps) 
       const { data, error: dbError } = await supabase
         .from('portals')
         .select('id, name, require_payment, subdomain')
-        .ilike('id', portalId)
+        .ilike('subdomain', portalId)
         .maybeSingle();
 
       if (dbError) {
