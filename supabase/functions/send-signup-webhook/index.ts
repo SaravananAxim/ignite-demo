@@ -41,6 +41,7 @@ interface SignupPayload {
   };
   franchisee: {
     id: string;
+    user_id: string | null;
     name: string;
     email: string;
     phone: string | null;
@@ -275,6 +276,7 @@ const buildPayload = ({
     },
     franchisee: {
       id: franchisee.id,
+      user_id: franchisee.user_id || null,
       name: franchisee.name,
       email: franchisee.email,
       phone: franchisee.phone,
