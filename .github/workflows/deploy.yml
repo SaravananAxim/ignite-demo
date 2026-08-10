@@ -1,26 +1,24 @@
-name: Sync and Deploy to S3
+name: Build and Deploy to AWS S3 and CloudFront
 
 on:
-  repository_dispatch:
-    types: [codecommit-push]
   push:
     branches:
-      - main
+    - main
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
+      - name: Checkout Code
         uses: actions/checkout@v4
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '20'
           cache: 'npm'
 
-      - name: Install and Build
+      - name: Install Dependencies and Build
         run: |
           npm install
           npm run build
@@ -32,10 +30,10 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-1
 
-      - name: Sync to S3
+      - name: Deploy to S3 Bucket
         run: |
-          aws s3 sync ./build/ "s3://${{ secrets.S3_BUCKET }}" --delete
+          aws s3 sync dist/ s3://YOUR-S3-BUCKET-NAME --delete
 
-      - name: Invalidate CloudFront
+      - name: Invalidate CloudFront CDN Cache
         run: |
-          aws cloudfront create-invalidation --distribution-id "${{ secrets.CLOUDFRONT_DISTRIBUTION }}" --paths "/*"
+          aws cloudfront create-invalidation --distribution-id YOUR-CLOUDFRONT-DISTRIBUTION-ID --paths "/*"
