@@ -3,7 +3,7 @@ name: Build and Deploy to AWS S3 and CloudFront
 on:
   push:
     branches:
-    - main
+      - main
 
 jobs:
   deploy:
@@ -32,8 +32,8 @@ jobs:
 
       - name: Deploy to S3 Bucket
         run: |
-          aws s3 sync dist/ s3://YOUR-S3-BUCKET-NAME --delete
+          aws s3 sync dist/ s3://${{ secrets.S3_BUCKET }} --delete
 
       - name: Invalidate CloudFront CDN Cache
         run: |
-          aws cloudfront create-invalidation --distribution-id YOUR-CLOUDFRONT-DISTRIBUTION-ID --paths "/*"
+          aws cloudfront create-invalidation --distribution-id ${{ secrets.CLOUDFRONT_DISTRIBUTION }} --paths "/*"
