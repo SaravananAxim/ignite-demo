@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+    <title>Ignite Franchise Portal</title>
+    <meta name="description" content="Ignite Visibility Franchise Marketing Portal - Select your marketing package" />
+    <meta name="author" content="Ignite Visibility" />
+
+    <meta property="og:title" content="Ignite Franchise Portal" />
+    <meta property="og:description" content="Select your franchise marketing package" />
+    <meta property="og:type" content="website" />
+
+    <meta name="twitter:card" content="summary_large_image" />
+    
+    <!-- Inter font with extended weights -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://public-assets.tagconcierge.com/consent-banner/2.0.0/styles/light.min.css" />
+
+    <!-- Google tag (gtag.js) -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-QKZE6Q8F9F"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+      gtag('consent', 'default', {
+        security_storage: 'granted',
+        analytics_storage: 'denied',
+        ad_storage: 'denied',
+        ad_user_data: 'denied',
+        ad_personalization: 'denied'
+      });
+      gtag('config', 'G-QKZE6Q8F9F');
+    </script>
+  </head>
+
+  <body style="margin:0;min-height:100vh;background-color:#f1f5f9;">
+    <div id="root" style="min-height:100vh;width:100%;background-color:#f1f5f9;">
+      <div style="min-height:100vh;width:100%;display:flex;align-items:center;justify-content:center;">
+        <div style="display:flex;flex-direction:column;align-items:center;gap:0.75rem;color:#475569;">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="animation:spin 1s linear infinite;">
+          <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
+        </svg>
+        <span style="font-family:Inter,sans-serif;font-size:14px;">Loading…</span>
+        </div>
+      </div>
+    </div>
+    <style>@keyframes spin{to{transform:rotate(360deg);}}</style>
+    <script>
+      const CONSENT_STORAGE_KEY = "cookie_consent_state";
+      const CONSENT_SCRIPT_SRC = "https://public-assets.tagconcierge.com/consent-banner/2.0.0/cb.min.js";
+      let consentBannerInitialized = false;
+
+
+      function loadConsentState() {
+        try {
+          const raw = localStorage.getItem(CONSENT_STORAGE_KEY);
+          return raw ? JSON.parse(raw) : null;
+        } catch (error) {
+          return null;
+        }
+      }
+
+      function saveConsentState(consentState) {
+        localStorage.setItem(CONSENT_STORAGE_KEY, JSON.stringify(consentState));
+
+        if (window.gtag) {
+          window.gtag('consent', 'update', consentState);
+        }
+      }
+
+      function initConsentBanner() {
+        if (consentBannerInitialized) return;
+        if (typeof window.cookiesBannerJs !== 'function') {
+          console.error('[Consent Banner] window.cookiesBannerJs is not available after script load.');
+          return;
+        }
+
+        consentBannerInitialized = true;
+        window.cookiesBannerJs(
+          loadConsentState,
+          saveConsentState,
+          {
+            display: {
+              mode: 'bar',
+              wall: false,
+              accent_color: '#31546d'
+            },
+            consent_types: [
+              {
+                name: 'analytics_storage',
+                title: 'Analytics cookies',
+                description: 'Used to understand which pages and features are most useful so we can improve the experience.',
+                default: 'denied',
+                require: false
+              }
+            ],
+            modal: {
+              title: 'Cookie preferences',
+              description: "We use essential cookies to keep your account secure and the portal working properly. With your permission, we'd also like to use analytics cookies to understand which pages and features are most useful so we can improve the experience for you.<br><small>Essential cookies are always active. Only analytics cookies are optional.</small>",
+              buttons: {
+                close: 'Cancel',
+                accept: 'Accept'
+              }
+            },
+            settings: {
+              title: 'Cookie preferences',
+              description: "We use essential cookies to keep your account secure and the portal working properly. With your permission, we'd also like to use analytics cookies to understand which pages and features are most useful so we can improve the experience for you.<br><small>Essential cookies are always active. Only analytics cookies are optional.</small>",
+              buttons: {
+                reject: 'Cancel',
+                close: 'Cancel',
+                accept: 'Accept'
+              }
+            }
+          }
+        );
+      }
+
+      function loadConsentBannerScript() {
+        const existingScript = document.querySelector('script[data-consent-banner-loader="true"]');
+
+        if (existingScript) {
+          if (typeof window.cookiesBannerJs === 'function') {
+            initConsentBanner();
+          }
+          return;
+        }
+
+        const script = document.createElement('script');
+        script.src = CONSENT_SCRIPT_SRC;
+        script.async = true;
+        script.dataset.consentBannerLoader = 'true';
+        script.onload = initConsentBanner;
+        script.onerror = function () {
+          console.error(`[Consent Banner] Failed to load Tag Concierge script: ${CONSENT_SCRIPT_SRC}`);
+        };
+        document.head.appendChild(script);
+      }
+
+      loadConsentBannerScript();
+    </script>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

@@ -1,0 +1,82 @@
+name: Build and Deploy App
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    env:
+      ACR_LOGIN_SERVER: ${{ secrets.ACR_LOGIN_SERVER }}
+      ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
+      ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
+      RESOURCE_GROUP: ${{ secrets.AZURE_RESOURCE_GROUP }}
+      APP_SERVICE_NAME: ${{ secrets.AZURE_APP_SERVICE_NAME }}
+      IMAGE_NAME: "${{ secrets.ACR_LOGIN_SERVER }}/ignite-client-portal"
+      IMAGE_TAG: "${{ github.run_number }}"
+      
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Verifying Workspace Files
+      run: |
+        echo "========== Verifying Workspace Files =========="
+        ls -la
+    
+    - name: Build Docker image
+      run: |
+        echo "========== Building Docker image =========="
+        docker build --no-cache -t ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }} .
+
+    - name: Login to ACR
+      run: |
+        echo "========== Logging in to Azure Container Registry =========="
+        echo "${{ env.ACR_PASSWORD }}" | docker login -u "${{ env.ACR_USERNAME }}" --password-stdin ${{ env.ACR_LOGIN_SERVER }}
+
+    - name: Push to ACR
+      run: |
+        echo "========== Pushing image to ACR =========="
+        docker push ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
+        docker tag ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }} ${{ env.IMAGE_NAME }}:latest
+        docker push ${{ env.IMAGE_NAME }}:latest
+
+    - name: Log in to Azure and Deploy
+      run: |
+        echo "========== Deploying to Azure App Service =========="
+        SUBSCRIPTION_ID=$(echo '${{ secrets.AZURE_SP }}' | jq -r '.subscriptionId')
+        TENANT_ID=$(echo '${{ secrets.AZURE_SP }}' | jq -r '.tenant')
+        CLIENT_ID=$(echo '${{ secrets.AZURE_SP }}' | jq -r '.appId')
+        CLIENT_SECRET=$(echo '${{ secrets.AZURE_SP }}' | jq -r '.password')
+        
+        az login --service-principal -u $CLIENT_ID -p $CLIENT_SECRET --tenant $TENANT_ID
+        az account set --subscription $SUBSCRIPTION_ID
+        
+        az webapp config container set \
+            --name ${{ env.APP_SERVICE_NAME }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --container-image-name ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }} \
+            --container-registry-url https://${{ env.ACR_LOGIN_SERVER }} \
+            --container-registry-user ${{ env.ACR_USERNAME }} \
+            --container-registry-password ${{ env.ACR_PASSWORD }}
+            
+        az webapp restart --name ${{ env.APP_SERVICE_NAME }} --resource-group ${{ env.RESOURCE_GROUP }}
+        sleep 30
+
+    
+
+    - name: Send Outlook Notification
+      if: always()
+      uses: dawidd6/action-send-mail@v3
+      with:
+        server_address: smtp.office365.com
+        server_port: 587
+        username: ${{ secrets.MAIL_USERNAME }}
+        password: ${{ secrets.MAIL_PASSWORD }}
+        subject: "Deployment Status: ${{ job.status }} - ${{ github.workflow }}"
+        body: "The deployment for ${{ github.repository }} has completed with status: ${{ job.status }}."
+        to: saravanan.s@aximsoft.com, aximsoftadmin@aximsoft.com
+        from: GitHub Actions <${{ secrets.MAIL_USERNAME }}>

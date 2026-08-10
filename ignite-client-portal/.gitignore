@@ -1,0 +1,60 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Dependencies
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+ss
+
+# Supabase
+.supabase
+
+# Build output
+build
+*.tsbuildinfo
+
+# Package manager lock files (optional - keep the one you use)
+# Uncomment if you want to ignore lock files
+# package-lock.json
+# yarn.lock
+# pnpm-lock.yaml
+
+# Testing
+coverage
+.nyc_output
+
+# Temporary files
+*.tmp
+*.temp
+.cache
+
+# OS files
+.DS_Store
+Thumbs.db
+.pnpmfile.cjs
+JENKINS-ADVANCED.md
+JENKINS-CHECKLIST.md
+JENKINS-SETUP.md
+Jenkinsfile
+sp.json
+sssssssssss
+shgdsshgt
